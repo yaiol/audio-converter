@@ -26,7 +26,7 @@
   "lblMainOverwriteSkip": "Bỏ qua",
   "lblMainOverwriteOverwrite": "Ghi đè",
   "lblMainOverwriteRename": "Giữ cả hai",
-  "lblMainDestSource": "Cùng thư mục với nguồn",
+  "lblMainDestSource": "Thư mục nguồn",
   "msgMainNoFfmpeg": "Không tìm thấy công cụ chuyển đổi (ffmpeg). Hãy đặt nó cạnh ứng dụng, hoặc cài đặt và thêm vào PATH.",
   "tipMainRemove": "Xóa khỏi danh sách",
   "tipMainCancel": "Hủy",

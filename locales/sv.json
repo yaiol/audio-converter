@@ -26,7 +26,7 @@
   "lblMainOverwriteSkip": "Hoppa över",
   "lblMainOverwriteOverwrite": "Skriv över",
   "lblMainOverwriteRename": "Behåll båda",
-  "lblMainDestSource": "Samma mapp som källan",
+  "lblMainDestSource": "Källmapp",
   "msgMainNoFfmpeg": "Konverteringsmotorn (ffmpeg) hittades inte. Placera den bredvid appen, eller installera den och lägg till den i PATH.",
   "tipMainRemove": "Ta bort från listan",
   "tipMainCancel": "Avbryt",

@@ -26,7 +26,7 @@
   "lblMainOverwriteSkip": "Прескочи",
   "lblMainOverwriteOverwrite": "Препиши",
   "lblMainOverwriteRename": "Задржи оба",
-  "lblMainDestSource": "Исти фолдер као извор",
+  "lblMainDestSource": "Изворна фасцикла",
   "msgMainNoFfmpeg": "Конверзиони механизам (ffmpeg) није пронађен. Ставите га поред апликације, или га инсталирајте и додајте у PATH.",
   "tipMainRemove": "Уклони са листе",
   "tipMainCancel": "Откажи",

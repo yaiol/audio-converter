@@ -26,7 +26,7 @@
   "lblMainOverwriteSkip": "Salta",
   "lblMainOverwriteOverwrite": "Sovrascrivi",
   "lblMainOverwriteRename": "Mantieni entrambi",
-  "lblMainDestSource": "Stessa cartella della sorgente",
+  "lblMainDestSource": "Cartella di origine",
   "msgMainNoFfmpeg": "Il motore di conversione (ffmpeg) non è stato trovato. Mettilo accanto all'app, oppure installalo e aggiungilo al PATH.",
   "tipMainRemove": "Rimuovi dalla lista",
   "tipMainCancel": "Annulla",

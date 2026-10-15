@@ -26,7 +26,7 @@
   "lblMainOverwriteSkip": "چھوڑ دیں",
   "lblMainOverwriteOverwrite": "اوور رائٹ کریں",
   "lblMainOverwriteRename": "دونوں رکھیں",
-  "lblMainDestSource": "ماخذ کی طرح کا فولڈر",
+  "lblMainDestSource": "ماخذ فولڈر",
   "msgMainNoFfmpeg": "تبادل کا انجن (ffmpeg) نہیں ملا۔ اسے ایپ کے ساتھ رکھیں، یا اسے انسٹال کریں اور PATH میں شامل کریں۔",
   "tipMainRemove": "فہرست سے ہٹائیں",
   "tipMainCancel": "منسوخ کریں",

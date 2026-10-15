@@ -26,7 +26,7 @@
   "lblMainOverwriteSkip": "Kihagyás",
   "lblMainOverwriteOverwrite": "Felülírás",
   "lblMainOverwriteRename": "Mindkettő megtartása",
-  "lblMainDestSource": "Ugyanaz a mappa, mint a forrás",
+  "lblMainDestSource": "Forrásmappa",
   "msgMainNoFfmpeg": "A konverziós motor (ffmpeg) nem található. Helyezze az alkalmazás mellé, vagy telepítse és adja hozzá a PATH-hoz.",
   "tipMainRemove": "Eltávolítás a listáról",
   "tipMainCancel": "Mégse",

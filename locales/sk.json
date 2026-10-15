@@ -26,7 +26,7 @@
   "lblMainOverwriteSkip": "Preskočiť",
   "lblMainOverwriteOverwrite": "Prepísať",
   "lblMainOverwriteRename": "Ponechať obidva",
-  "lblMainDestSource": "Rovnaký priečinok ako zdroj",
+  "lblMainDestSource": "Zdrojový priečinok",
   "msgMainNoFfmpeg": "Konverzný engine (ffmpeg) sa nenašiel. Umiestnite ho vedľa aplikácie, alebo ho nainštalujte a pridajte do PATH.",
   "tipMainRemove": "Odstrániť zo zoznamu",
   "tipMainCancel": "Zrušiť",

@@ -26,7 +26,7 @@
   "lblMainOverwriteSkip": "Preskoči",
   "lblMainOverwriteOverwrite": "Prepiši",
   "lblMainOverwriteRename": "Zadrži oboje",
-  "lblMainDestSource": "Ista mapa kao i izvorna",
+  "lblMainDestSource": "Izvorna mapa",
   "msgMainNoFfmpeg": "Konverzijski mehanizam (ffmpeg) nije pronađen. Stavite ga pored aplikacije ili ga instalirajte i dodajte u PATH.",
   "tipMainRemove": "Ukloni s popisa",
   "tipMainCancel": "Odustani",

@@ -26,7 +26,7 @@
   "lblMainOverwriteSkip": "এড়িয়ে যান",
   "lblMainOverwriteOverwrite": "ওভাররাইট করুন",
   "lblMainOverwriteRename": "উভয়ই রাখুন",
-  "lblMainDestSource": "উৎসের মতো একই ফোল্ডারে",
+  "lblMainDestSource": "উৎস ফোল্ডার",
   "msgMainNoFfmpeg": "রূপান্তর ইঞ্জিন (ffmpeg) পাওয়া যায়নি। এটিকে অ্যাপের পাশে রাখুন, অথবা ইনস্টল করে PATH-এ যোগ করুন।",
   "tipMainRemove": "তালিকা থেকে সরান",
   "tipMainCancel": "বাতিল করুন",

@@ -26,7 +26,7 @@
   "lblMainOverwriteSkip": "Пропустить",
   "lblMainOverwriteOverwrite": "Перезаписать",
   "lblMainOverwriteRename": "Сохранить оба",
-  "lblMainDestSource": "Та же папка, что и источник",
+  "lblMainDestSource": "Исходная папка",
   "msgMainNoFfmpeg": "Движок конвертации (ffmpeg) не найден. Поместите его рядом с приложением, либо установите и добавьте в PATH.",
   "tipMainRemove": "Удалить из списка",
   "tipMainCancel": "Отмена",

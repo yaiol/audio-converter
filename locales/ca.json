@@ -26,7 +26,7 @@
   "lblMainOverwriteSkip": "Omet-lo",
   "lblMainOverwriteOverwrite": "Sobreescriure'l",
   "lblMainOverwriteRename": "Conserva ambdós",
-  "lblMainDestSource": "Mateixa carpeta que l'origen",
+  "lblMainDestSource": "Carpeta d'origen",
   "msgMainNoFfmpeg": "No s'ha trobat el motor de conversió (ffmpeg). Poseu-lo al costat de l'aplicació, o instal·leu-lo i afegiu-lo a la variable PATH.",
   "tipMainRemove": "Elimina de la llista",
   "tipMainCancel": "Cancel·la",

@@ -26,7 +26,7 @@
   "lblMainOverwriteSkip": "தவிர்க்கவும்",
   "lblMainOverwriteOverwrite": "மேலெழுதவும்",
   "lblMainOverwriteRename": "இரண்டையும் வைக்கவும்",
-  "lblMainDestSource": "மூலத்தைப் போன்ற அதே கோப்புறை",
+  "lblMainDestSource": "மூல கோப்புறை",
   "msgMainNoFfmpeg": "மாற்று இயந்திரம் (ffmpeg) கண்டறியப்படவில்லை. அதை பயன்பாட்டின் அருகில் வைக்கவும், அல்லது நிறுவி PATH இல் சேர்க்கவும்.",
   "tipMainRemove": "பட்டியலிலிருந்து நீக்கவும்",
   "tipMainCancel": "ரத்துசெய்",

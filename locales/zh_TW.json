@@ -26,7 +26,7 @@
   "lblMainOverwriteSkip": "跳過",
   "lblMainOverwriteOverwrite": "覆寫",
   "lblMainOverwriteRename": "保留兩者",
-  "lblMainDestSource": "與來源檔案在同一資料夾",
+  "lblMainDestSource": "來源資料夾",
   "msgMainNoFfmpeg": "未找到轉換引擎 (ffmpeg)。請將其放在應用程式旁邊，或安裝並新增到 PATH。",
   "tipMainRemove": "從列表中移除",
   "tipMainCancel": "取消",

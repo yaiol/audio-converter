@@ -26,7 +26,7 @@
   "lblMainOverwriteSkip": "Παράλειψη",
   "lblMainOverwriteOverwrite": "Αντικατάσταση",
   "lblMainOverwriteRename": "Διατήρηση και των δύο",
-  "lblMainDestSource": "Ίδιος φάκελος με την πηγή",
+  "lblMainDestSource": "Φάκελος προέλευσης",
   "msgMainNoFfmpeg": "Η μηχανή μετατροπής (ffmpeg) δεν βρέθηκε. Τοποθετήστε την δίπλα στην εφαρμογή, ή εγκαταστήστε την και προσθέστε την στο PATH.",
   "tipMainRemove": "Αφαίρεση από τη λίστα",
   "tipMainCancel": "Ακύρωση",

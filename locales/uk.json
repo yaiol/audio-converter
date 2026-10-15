@@ -26,7 +26,7 @@
   "lblMainOverwriteSkip": "Пропустити",
   "lblMainOverwriteOverwrite": "Перезаписати",
   "lblMainOverwriteRename": "Зберегти обидва",
-  "lblMainDestSource": "Та сама папка, що й джерело",
+  "lblMainDestSource": "Вихідна папка",
   "msgMainNoFfmpeg": "Рушій конвертації (ffmpeg) не знайдено. Розмістіть його поруч із програмою, або встановіть і додайте до PATH.",
   "tipMainRemove": "Видалити зі списку",
   "tipMainCancel": "Скасувати",

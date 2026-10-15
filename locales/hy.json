@@ -26,7 +26,7 @@
   "lblMainOverwriteSkip": "Բաց թողնել",
   "lblMainOverwriteOverwrite": "Վերագրել",
   "lblMainOverwriteRename": "Պահել երկուսն էլ",
-  "lblMainDestSource": "Նույն թղթապանակում, ինչ աղբյուրը",
+  "lblMainDestSource": "Աղբյուրի թղթապանակ",
   "msgMainNoFfmpeg": "Փոխակերպման շարժիչը (ffmpeg) չի գտնվել։ Տեղադրեք այն հավելվածի կողքին, կամ տեղադրեք և ավելացրեք PATH-ին։",
   "tipMainRemove": "Հեռացնել ցուցակից",
   "tipMainCancel": "Չեղարկել",

@@ -26,7 +26,7 @@
   "lblMainOverwriteSkip": "Overslaan",
   "lblMainOverwriteOverwrite": "Overschrijven",
   "lblMainOverwriteRename": "Beide behouden",
-  "lblMainDestSource": "Zelfde map als de bron",
+  "lblMainDestSource": "Bronmap",
   "msgMainNoFfmpeg": "De conversie-engine (ffmpeg) is niet gevonden. Plaats deze naast de app, of installeer deze en voeg deze toe aan de PATH.",
   "tipMainRemove": "Verwijderen uit de lijst",
   "tipMainCancel": "Annuleren",

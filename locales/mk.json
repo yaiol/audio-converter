@@ -26,7 +26,7 @@
   "lblMainOverwriteSkip": "Прескокни",
   "lblMainOverwriteOverwrite": "Презапиши",
   "lblMainOverwriteRename": "Зачувај ги двете",
-  "lblMainDestSource": "Иста папка како изворот",
+  "lblMainDestSource": "Изворна папка",
   "msgMainNoFfmpeg": "Моторот за конверзија (ffmpeg) не е пронајден. Ставете го до апликацијата, или инсталирајте го и додадете го во PATH.",
   "tipMainRemove": "Отстрани од листата",
   "tipMainCancel": "Откажи",

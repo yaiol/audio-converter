@@ -26,7 +26,7 @@
   "lblMainOverwriteSkip": "건너뛰기",
   "lblMainOverwriteOverwrite": "덮어쓰기",
   "lblMainOverwriteRename": "둘 다 유지",
-  "lblMainDestSource": "원본과 동일한 폴더",
+  "lblMainDestSource": "원본 폴더",
   "msgMainNoFfmpeg": "변환 엔진(ffmpeg)을 찾을 수 없습니다. 앱 옆에 두거나 설치 후 PATH에 추가하세요.",
   "tipMainRemove": "목록에서 제거",
   "tipMainCancel": "취소",

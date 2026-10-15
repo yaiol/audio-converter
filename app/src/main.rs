@@ -50,6 +50,12 @@ const BUILD_ID: &str = concat!("yaiol-build:", env!("YAIOL_BUILD_ID"));
 /// ⚠ CLAUDE: DISPLAY ONLY. The release version (`CARGO_PKG_VERSION`) stays plain three-part semver
 /// and must not absorb the counter: an update check compares it against the published version, and
 /// four parts is not semver.
+/// The narrowest the window may be: the file list and the options panel side by side.
+pub const MIN_WIDTH: f64 = 640.0;
+/// The shortest the window may be until the main view has measured what its panel needs, and if it
+/// never can.
+pub const MIN_HEIGHT_FALLBACK: f64 = 440.0;
+
 fn app_version_build() -> String {
     let full = std::hint::black_box(BUILD_ID);
     let id = &full["yaiol-build:".len()..];
@@ -64,7 +70,13 @@ fn main() {
                 // never offered. Dioxus keeps it in a debug build by default - which is how it reached the
                 // list on 2026-10-13 - and an app that wants a context menu draws its own.
                 .with_disable_context_menu(true)
-                .with_window(dioxus::desktop::WindowBuilder::new().with_title(APP_NAME))
+                .with_window(
+                    dioxus::desktop::WindowBuilder::new()
+                        .with_title(APP_NAME)
+                        // Below this the list and the panel no longer fit side by side. The minimum HEIGHT is not
+                        // known here: the main view measures what its panel needs and sets it (see converter.rs).
+                        .with_min_inner_size(dioxus::desktop::LogicalSize::new(MIN_WIDTH, MIN_HEIGHT_FALLBACK)),
+                )
                 .with_menu(None::<dioxus::desktop::muda::Menu>),
         )
         .launch(App);

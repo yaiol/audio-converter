@@ -53,3 +53,17 @@ body {
 .converter-status { font-size: 12px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 
 .manager-suggest { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+
+/* The window's body: the file list takes what is left, the run's choices sit in a column of their own at
+   the right. The panel is the catalog's .pnl surface; this is layout only. */
+.converter-body { flex: 1; min-height: 0; display: flex; }
+.converter-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.converter-panel { width: 236px; flex-shrink: 0; display: flex; flex-direction: column; gap: 10px; padding: 12px; border-left: 1px solid var(--border); overflow-y: auto; }
+/* Every row is as wide as the column: the select takes what the button leaves. */
+.converter-panel .barh-grp { width: 100%; }
+.converter-panel .select { flex: 1; min-width: 0; width: auto; max-width: none; }
+.converter-panel-run { display: flex; gap: 8px; }
+/* width:auto beats the column rule above, or the group spans the row and its buttons stretch */
+.converter-panel .converter-panel-run .barh-grp { width: auto; flex: 0 0 auto; }
+/* The number at once is two digits at most: the select is as wide as that, not as the column. */
+.converter-panel-run .select { flex: 0 0 auto; width: 4.5em; }

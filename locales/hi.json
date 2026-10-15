@@ -26,7 +26,7 @@
   "lblMainOverwriteSkip": "छोड़ें",
   "lblMainOverwriteOverwrite": "अधिलेखित करें",
   "lblMainOverwriteRename": "दोनों रखें",
-  "lblMainDestSource": "स्रोत के समान फ़ोल्डर में",
+  "lblMainDestSource": "स्रोत फ़ोल्डर",
   "msgMainNoFfmpeg": "रूपांतरण इंजन (ffmpeg) नहीं मिला। इसे ऐप के बगल में रखें, या इसे इंस्टॉल करें और PATH में जोड़ें।",
   "tipMainRemove": "सूची से हटाएँ",
   "tipMainCancel": "रद्द करें",

@@ -26,7 +26,7 @@
   "lblMainOverwriteSkip": "ข้าม",
   "lblMainOverwriteOverwrite": "เขียนทับ",
   "lblMainOverwriteRename": "เก็บทั้งคู่",
-  "lblMainDestSource": "โฟลเดอร์เดียวกับต้นฉบับ",
+  "lblMainDestSource": "โฟลเดอร์ต้นทาง",
   "msgMainNoFfmpeg": "ไม่พบเอนจิ้นการแปลง (ffmpeg) โปรดวางไว้ข้างแอป หรือติดตั้งและเพิ่มลงใน PATH",
   "tipMainRemove": "ลบออกจากรายการ",
   "tipMainCancel": "ยกเลิก",

@@ -26,7 +26,7 @@
   "lblMainOverwriteSkip": "Пропусни го",
   "lblMainOverwriteOverwrite": "Презапиши го",
   "lblMainOverwriteRename": "Запази и двете",
-  "lblMainDestSource": "Същата папка като източника",
+  "lblMainDestSource": "Изходна папка",
   "msgMainNoFfmpeg": "Конвертиращият енджин (ffmpeg) не беше намерен. Поставете го до приложението или го инсталирайте и го добавете към PATH.",
   "tipMainRemove": "Премахване от списъка",
   "tipMainCancel": "Отказ",

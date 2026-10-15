@@ -26,7 +26,7 @@
   "lblMainOverwriteSkip": "Hopp over",
   "lblMainOverwriteOverwrite": "Overskriv",
   "lblMainOverwriteRename": "Behold begge",
-  "lblMainDestSource": "Samme mappe som kilden",
+  "lblMainDestSource": "Kildemappe",
   "msgMainNoFfmpeg": "Konverteringsmotoren (ffmpeg) ble ikke funnet. Plasser den ved siden av appen, eller installer den og legg den til PATH.",
   "tipMainRemove": "Fjern fra listen",
   "tipMainCancel": "Avbryt",

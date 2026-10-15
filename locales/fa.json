@@ -26,7 +26,7 @@
   "lblMainOverwriteSkip": "رد کردن",
   "lblMainOverwriteOverwrite": "بازنویسی",
   "lblMainOverwriteRename": "هر دو را نگه دار",
-  "lblMainDestSource": "همان پوشه مبدأ",
+  "lblMainDestSource": "پوشه مبدأ",
   "msgMainNoFfmpeg": "موتور تبدیل (ffmpeg) پیدا نشد. آن را کنار برنامه قرار دهید، یا نصب کرده و به PATH اضافه کنید.",
   "tipMainRemove": "حذف از لیست",
   "tipMainCancel": "لغو",

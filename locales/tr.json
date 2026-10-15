@@ -26,7 +26,7 @@
   "lblMainOverwriteSkip": "Atla",
   "lblMainOverwriteOverwrite": "Üzerine yaz",
   "lblMainOverwriteRename": "İkisini de sakla",
-  "lblMainDestSource": "Kaynakla aynı klasör",
+  "lblMainDestSource": "Kaynak Klasör",
   "msgMainNoFfmpeg": "Dönüştürme motoru (ffmpeg) bulunamadı. Uygulamanın yanına koyun veya kurup PATH'e ekleyin.",
   "tipMainRemove": "Listeden kaldır",
   "tipMainCancel": "İptal",

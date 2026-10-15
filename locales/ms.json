@@ -26,7 +26,7 @@
   "lblMainOverwriteSkip": "Langkau",
   "lblMainOverwriteOverwrite": "Tulis ganti",
   "lblMainOverwriteRename": "Kekalkan kedua-duanya",
-  "lblMainDestSource": "Folder yang sama dengan sumber",
+  "lblMainDestSource": "Folder Sumber",
   "msgMainNoFfmpeg": "Enjin penukaran (ffmpeg) tidak ditemui. Letakkannya di sebelah aplikasi, atau pasang dan tambahkan ke PATH.",
   "tipMainRemove": "Buang dari senarai",
   "tipMainCancel": "Batal",

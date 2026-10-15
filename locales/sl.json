@@ -26,7 +26,7 @@
   "lblMainOverwriteSkip": "Preskoči",
   "lblMainOverwriteOverwrite": "Prepiši",
   "lblMainOverwriteRename": "Obdrži oba",
-  "lblMainDestSource": "Ista mapa kot vir",
+  "lblMainDestSource": "Izvorna mapa",
   "msgMainNoFfmpeg": "Pretvornik (ffmpeg) ni bil najden. Postavite ga poleg aplikacije ali ga namestite in dodajte v PATH.",
   "tipMainRemove": "Odstrani s seznama",
   "tipMainCancel": "Prekliči",

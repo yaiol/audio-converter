@@ -26,7 +26,7 @@
   "lblMainOverwriteSkip": "Lewati",
   "lblMainOverwriteOverwrite": "Timpa",
   "lblMainOverwriteRename": "Simpan keduanya",
-  "lblMainDestSource": "Folder yang sama dengan sumber",
+  "lblMainDestSource": "Folder Sumber",
   "msgMainNoFfmpeg": "Mesin konversi (ffmpeg) tidak ditemukan. Letakkan di sebelah aplikasi, atau instal dan tambahkan ke PATH.",
   "tipMainRemove": "Hapus dari daftar",
   "tipMainCancel": "Batalkan",

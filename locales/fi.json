@@ -26,7 +26,7 @@
   "lblMainOverwriteSkip": "Ohita",
   "lblMainOverwriteOverwrite": "Korvaa",
   "lblMainOverwriteRename": "Säilytä molemmat",
-  "lblMainDestSource": "Sama kansio kuin lähde",
+  "lblMainDestSource": "Lähdekansio",
   "msgMainNoFfmpeg": "Muunnosmoottoria (ffmpeg) ei löytynyt. Aseta se sovelluksen viereen tai asenna se ja lisää se PATH-ympäristömuuttujaan.",
   "tipMainRemove": "Poista luettelosta",
   "tipMainCancel": "Peruuta",

@@ -26,7 +26,7 @@
   "lblMainOverwriteSkip": "దాటవేయి",
   "lblMainOverwriteOverwrite": "భర్తీ చేయి",
   "lblMainOverwriteRename": "రెండూ ఉంచు",
-  "lblMainDestSource": "మూలం వలె అదే ఫోల్డర్",
+  "lblMainDestSource": "మూల ఫోల్డర్",
   "msgMainNoFfmpeg": "మార్పిడి ఇంజిన్ (ffmpeg) కనుగొనబడలేదు. దానిని యాప్ పక్కన ఉంచండి, లేదా ఇన్‌స్టాల్ చేసి PATH కు జోడించండి.",
   "tipMainRemove": "జాబితా నుండి తొలగించు",
   "tipMainCancel": "రద్దు చేయి",

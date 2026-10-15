@@ -171,6 +171,42 @@ pub fn Converter(
         }
     });
 
+    // The window may not be shorter than the layout needs: the header, the options panel down to its
+    // last row, and the status bar. Measured from the laid-out page - the panel's rows decide it, so a
+    // row added there raises the floor by itself. The first frames may not be laid out yet (fonts,
+    // styles), so it is asked again until the panel has a real height; if it never answers, a fixed
+    // floor stands, so the window is never left without one.
+    use_future(move || async move {
+        let mut height = 0.0;
+        for _ in 0..40 {
+            tokio::time::sleep(Duration::from_millis(250)).await;
+            let mut ev = document::eval(
+                r#"
+                const q = (s) => document.querySelector(s);
+                const panel = q('.converter-panel'), head = q('.barh-header');
+                const rule = q('.barh-gradient'), foot = q('.barh-footer');
+                if (!panel || !head || !foot || !panel.lastElementChild) { dioxus.send(0); }
+                else {
+                    const end = panel.lastElementChild.getBoundingClientRect().bottom;
+                    const pad = parseFloat(getComputedStyle(panel).paddingBottom) || 0;
+                    dioxus.send(head.offsetHeight + (rule ? rule.offsetHeight : 0)
+                        + (end - panel.getBoundingClientRect().top) + pad + foot.offsetHeight);
+                }
+                "#,
+            );
+            if let Ok(h) = ev.recv::<f64>().await {
+                if h > 100.0 {
+                    height = h.ceil();
+                    break;
+                }
+            }
+        }
+        if height == 0.0 {
+            height = crate::MIN_HEIGHT_FALLBACK;
+        }
+        dioxus::desktop::window().set_min_inner_size(Some(dioxus::desktop::LogicalSize::new(crate::MIN_WIDTH, height)));
+    });
+
     let lang = settings.read().lang.clone();
     let t = |key: &str| i18n::t(&lang, key);
 
@@ -347,8 +383,9 @@ pub fn Converter(
     let drop_label = t("msgMainDropLabel");
 
     rsx! {
-        // ⚠ CLAUDE: the file actions live in the ONE app header, icon-only with a tooltip. A second bar
-        // under it was removed on request; do not bring it back.
+        // ⚠ CLAUDE: the header holds the file actions only (icon-only, tooltips). The choices that shape a
+        // run - preset, tags, effects, where it goes, how many at once, Convert - live in the right-hand
+        // panel below, one aligned column. A second bar under the header was removed on request.
         AppHeader { app_name, app_version,
             div { class: "barh-grp",
                 button {
@@ -374,98 +411,6 @@ pub fn Converter(
                     Icon { width: 14, height: 14, icon: crate::icons::LdBrushCleaning }
                 }
             }
-            div { class: "barh-grp",
-                select {
-                    class: "select",
-                    title: "{s_main_preset}",
-                    "aria-label": "{s_main_preset}",
-                    value: "{preset_id}",
-                    onchange: move |e| settings.write().preset_id = e.value(),
-                    for (id, name) in preset_options {
-                        option { key: "{id}", value: "{id}", selected: id == preset_id, "{name}" }
-                    }
-                }
-                button {
-                    class: "btn icon",
-                    title: "{s_main_edit_presets}",
-                    "aria-label": "{s_main_edit_presets}",
-                    onclick: move |_| on_manage.call(manager::PRESETS.to_owned()),
-                    Icon { width: 14, height: 14, icon: LdSlidersHorizontal }
-                }
-            }
-            div { class: "barh-grp",
-                select {
-                    class: "select",
-                    title: "{s_main_cleanup}",
-                    "aria-label": "{s_main_cleanup}",
-                    value: "{cleanup_id}",
-                    onchange: move |e| settings.write().cleanup_id = e.value(),
-                    for (id, name) in cleanup_options {
-                        option { key: "{id}", value: "{id}", selected: id == cleanup_id, "{name}" }
-                    }
-                }
-                button {
-                    class: "btn icon",
-                    title: "{s_main_edit_cleanups}",
-                    "aria-label": "{s_main_edit_cleanups}",
-                    onclick: move |_| on_manage.call(manager::CLEANUPS.to_owned()),
-                    Icon { width: 14, height: 14, icon: LdSlidersHorizontal }
-                }
-            }
-            div { class: "barh-grp",
-                select {
-                    class: "select",
-                    title: "{s_main_effects}",
-                    "aria-label": "{s_main_effects}",
-                    value: "{effects_id}",
-                    onchange: move |e| settings.write().effects_id = e.value(),
-                    for (id, name) in effects_options {
-                        option { key: "{id}", value: "{id}", selected: id == effects_id, "{name}" }
-                    }
-                }
-                button {
-                    class: "btn icon",
-                    title: "{s_main_edit_effects}",
-                    "aria-label": "{s_main_edit_effects}",
-                    onclick: move |_| on_manage.call(manager::EFFECTS.to_owned()),
-                    Icon { width: 14, height: 14, icon: LdSlidersHorizontal }
-                }
-            }
-            div { class: "barh-grp",
-                select {
-                    class: "select",
-                    title: "{s_main_parallel}",
-                    "aria-label": "{s_main_parallel}",
-                    value: "{parallel}",
-                    onchange: move |e| {
-                        if let Ok(n) = e.value().parse::<u32>() {
-                            settings.write().parallel = n.clamp(1, crate::settings::max_parallel());
-                        }
-                    },
-                    for n in 1..=crate::settings::max_parallel() {
-                        option { key: "{n}", value: "{n}", selected: n == parallel, "{n}" }
-                    }
-                }
-            }
-            div { class: "barh-grp",
-                if busy {
-                    button {
-                        class: "btn icon",
-                        title: "{s_main_stop}",
-                        "aria-label": "{s_main_stop}",
-                        onclick: stop,
-                        Icon { width: 14, height: 14, icon: LdSquare }
-                    }
-                }
-                button {
-                    class: "btn icon",
-                    title: "{s_main_convert}",
-                    "aria-label": "{s_main_convert}",
-                    disabled: ffmpeg_missing || !have_items || busy || nothing_to_do,
-                    onclick: convert,
-                    Icon { width: 14, height: 14, icon: LdPlay }
-                }
-            }
             span { class: "bar-spacer" }
             {header_end}
         }
@@ -476,6 +421,8 @@ pub fn Converter(
                 add_paths(dropped.into_iter().map(|(_, p)| PathBuf::from(p)).collect());
             },
             {children}
+        div { class: "converter-body",
+        div { class: "converter-main",
         if ffmpeg_missing {
             div { class: "workspace-empty converter-note", "{no_ffmpeg}" }
         }
@@ -541,11 +488,66 @@ pub fn Converter(
             }
         }
         }
-        // Everything sits at the right end, tooltips instead of labels: the output choice and its settings
-        // are one welded group like the header's, and the open-folder icon is the last thing on the bar.
-        div { class: "barh-footer",
-            span { class: "converter-status", "{status_text}" }
-            span { class: "bar-spacer" }
+        // The run's choices, one column, every row the same width: a select with the button that edits
+        // what it picks, welded the way the header's groups are. Tooltips name them (no labels).
+        aside { class: "pnl converter-panel",
+            div { class: "barh-grp",
+                select {
+                    class: "select",
+                    title: "{s_main_preset}",
+                    "aria-label": "{s_main_preset}",
+                    value: "{preset_id}",
+                    onchange: move |e| settings.write().preset_id = e.value(),
+                    for (id, name) in preset_options {
+                        option { key: "{id}", value: "{id}", selected: id == preset_id, "{name}" }
+                    }
+                }
+                button {
+                    class: "btn icon",
+                    title: "{s_main_edit_presets}",
+                    "aria-label": "{s_main_edit_presets}",
+                    onclick: move |_| on_manage.call(manager::PRESETS.to_owned()),
+                    Icon { width: 14, height: 14, icon: LdSlidersHorizontal }
+                }
+            }
+            div { class: "barh-grp",
+                select {
+                    class: "select",
+                    title: "{s_main_cleanup}",
+                    "aria-label": "{s_main_cleanup}",
+                    value: "{cleanup_id}",
+                    onchange: move |e| settings.write().cleanup_id = e.value(),
+                    for (id, name) in cleanup_options {
+                        option { key: "{id}", value: "{id}", selected: id == cleanup_id, "{name}" }
+                    }
+                }
+                button {
+                    class: "btn icon",
+                    title: "{s_main_edit_cleanups}",
+                    "aria-label": "{s_main_edit_cleanups}",
+                    onclick: move |_| on_manage.call(manager::CLEANUPS.to_owned()),
+                    Icon { width: 14, height: 14, icon: LdSlidersHorizontal }
+                }
+            }
+            div { class: "barh-grp",
+                select {
+                    class: "select",
+                    title: "{s_main_effects}",
+                    "aria-label": "{s_main_effects}",
+                    value: "{effects_id}",
+                    onchange: move |e| settings.write().effects_id = e.value(),
+                    for (id, name) in effects_options {
+                        option { key: "{id}", value: "{id}", selected: id == effects_id, "{name}" }
+                    }
+                }
+                button {
+                    class: "btn icon",
+                    title: "{s_main_edit_effects}",
+                    "aria-label": "{s_main_edit_effects}",
+                    onclick: move |_| on_manage.call(manager::EFFECTS.to_owned()),
+                    Icon { width: 14, height: 14, icon: LdSlidersHorizontal }
+                }
+            }
             div { class: "barh-grp",
                 select {
                     class: "select",
@@ -566,35 +568,76 @@ pub fn Converter(
                     Icon { width: 14, height: 14, icon: LdSlidersHorizontal }
                 }
             }
-            select {
-                class: "select",
-                title: "{s_main_overwrite}",
-                "aria-label": "{s_main_overwrite}",
-                value: match overwrite { Overwrite::Skip => "skip", Overwrite::Overwrite => "overwrite", Overwrite::Rename => "rename" },
-                onchange: move |e| {
-                    settings.write().overwrite = match e.value().as_str() {
-                        "overwrite" => Overwrite::Overwrite,
-                        "rename" => Overwrite::Rename,
-                        _ => Overwrite::Skip,
-                    };
-                },
-                option { value: "skip", selected: overwrite == Overwrite::Skip, "{s_main_overwrite_skip}" }
-                option { value: "overwrite", selected: overwrite == Overwrite::Overwrite, "{s_main_overwrite_overwrite}" }
-                option { value: "rename", selected: overwrite == Overwrite::Rename, "{s_main_overwrite_rename}" }
+            div { class: "barh-grp",
+                select {
+                    class: "select",
+                    title: "{s_main_overwrite}",
+                    "aria-label": "{s_main_overwrite}",
+                    value: match overwrite { Overwrite::Skip => "skip", Overwrite::Overwrite => "overwrite", Overwrite::Rename => "rename" },
+                    onchange: move |e| {
+                        settings.write().overwrite = match e.value().as_str() {
+                            "overwrite" => Overwrite::Overwrite,
+                            "rename" => Overwrite::Rename,
+                            _ => Overwrite::Skip,
+                        };
+                    },
+                    option { value: "skip", selected: overwrite == Overwrite::Skip, "{s_main_overwrite_skip}" }
+                    option { value: "overwrite", selected: overwrite == Overwrite::Overwrite, "{s_main_overwrite_overwrite}" }
+                    option { value: "rename", selected: overwrite == Overwrite::Rename, "{s_main_overwrite_rename}" }
+                }
             }
-            button {
-                class: "btn icon",
-                title: "{s_main_open_output}",
-                "aria-label": "{s_main_open_output}",
-                disabled: open_target.is_none(),
-                onclick: move |_| {
-                    if let Some(p) = &open_target {
-                        let _ = open::that(p);
+            div { class: "converter-panel-run",
+                div { class: "barh-grp",
+                    select {
+                        class: "select",
+                        title: "{s_main_parallel}",
+                        "aria-label": "{s_main_parallel}",
+                        value: "{parallel}",
+                        onchange: move |e| {
+                            if let Ok(n) = e.value().parse::<u32>() {
+                                settings.write().parallel = n.clamp(1, crate::settings::max_parallel());
+                            }
+                        },
+                        for n in 1..=crate::settings::max_parallel() {
+                            option { key: "{n}", value: "{n}", selected: n == parallel, "{n}" }
+                        }
                     }
-                },
-                Icon { width: 14, height: 14, icon: LdFolderOpen }
+                    if busy {
+                        button {
+                            class: "btn icon",
+                            title: "{s_main_stop}",
+                            "aria-label": "{s_main_stop}",
+                            onclick: stop,
+                            Icon { width: 14, height: 14, icon: LdSquare }
+                        }
+                    }
+                    button {
+                        class: "btn icon",
+                        title: "{s_main_convert}",
+                        "aria-label": "{s_main_convert}",
+                        disabled: ffmpeg_missing || !have_items || busy || nothing_to_do,
+                        onclick: convert,
+                        Icon { width: 14, height: 14, icon: LdPlay }
+                    }
+                }
+                button {
+                    class: "btn icon",
+                    title: "{s_main_open_output}",
+                    "aria-label": "{s_main_open_output}",
+                    disabled: open_target.is_none(),
+                    onclick: move |_| {
+                        if let Some(p) = &open_target {
+                            let _ = open::that(p);
+                        }
+                    },
+                    Icon { width: 14, height: 14, icon: LdFolderOpen }
+                }
             }
+        }
+        }
+        }
+        div { class: "barh-footer",
+            span { class: "converter-status", "{status_text}" }
         }
     }
 }
-

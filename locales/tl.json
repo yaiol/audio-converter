@@ -26,7 +26,7 @@
   "lblMainOverwriteSkip": "Laktawan",
   "lblMainOverwriteOverwrite": "Patungan",
   "lblMainOverwriteRename": "Panatilihin ang dalawa",
-  "lblMainDestSource": "Parehong folder ng pinagmulan",
+  "lblMainDestSource": "Pinagmulang Folder",
   "msgMainNoFfmpeg": "Hindi natagpuan ang conversion engine (ffmpeg). Ilagay ito sa tabi ng app, o i-install at idagdag sa PATH.",
   "tipMainRemove": "Alisin sa listahan",
   "tipMainCancel": "Kanselahin",

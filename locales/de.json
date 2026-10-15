@@ -26,7 +26,7 @@
   "lblMainOverwriteSkip": "Überspringen",
   "lblMainOverwriteOverwrite": "Überschreiben",
   "lblMainOverwriteRename": "Beide behalten",
-  "lblMainDestSource": "Gleicher Ordner wie die Quelle",
+  "lblMainDestSource": "Quellordner",
   "msgMainNoFfmpeg": "Die Konvertierungs-Engine (ffmpeg) wurde nicht gefunden. Legen Sie sie neben die App, oder installieren Sie sie und fügen Sie sie dem PATH hinzu.",
   "tipMainRemove": "Aus der Liste entfernen",
   "tipMainCancel": "Abbrechen",

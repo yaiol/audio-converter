@@ -53,17 +53,12 @@ pub struct Settings {
     pub notify: bool,
 }
 
-/// The most conversions that can be asked for: the machine's logical cores. More processes than
-/// that only add memory and scheduling cost.
+/// The most conversions that can be asked for, and the default: the PHYSICAL cores. Encoding is
+/// CPU-bound, so the second hardware thread of a core adds little and the processes compete for the
+/// same core, memory and disk - measured on an 8-core / 16-thread machine, 16 at once took 45 s
+/// against 39 s for 8, so nothing above the physical count is offered.
 pub fn max_parallel() -> u32 {
-    std::thread::available_parallelism().map(|n| n.get() as u32).unwrap_or(2).max(1)
-}
-
-/// How many to run by default: the PHYSICAL cores. Encoding is CPU-bound, so the second hardware
-/// thread of a core adds little and the processes compete for the same core, memory and disk -
-/// measured on an 8-core / 16-thread machine, 16 at once took 45 s against 39 s for 8.
-pub fn default_parallel() -> u32 {
-    (num_cpus::get_physical() as u32).clamp(1, max_parallel())
+    (num_cpus::get_physical() as u32).max(1)
 }
 
 impl Default for Settings {
@@ -82,7 +77,7 @@ impl Default for Settings {
             destination_id: SOURCE_ID.to_owned(),
             cleanup_id: STANDARD_ID.to_owned(),
             effects_id: EFFECTS_STANDARD_ID.to_owned(),
-            parallel: default_parallel(),
+            parallel: max_parallel(),
             overwrite: Overwrite::Skip,
             notify: true,
         }

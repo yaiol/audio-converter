@@ -26,7 +26,7 @@
   "lblMainOverwriteSkip": "スキップ",
   "lblMainOverwriteOverwrite": "上書き",
   "lblMainOverwriteRename": "両方を保持",
-  "lblMainDestSource": "ソースと同じフォルダー",
+  "lblMainDestSource": "ソースフォルダー",
   "msgMainNoFfmpeg": "変換エンジン (ffmpeg) が見つかりませんでした。アプリの隣に置くか、インストールしてPATHに追加してください。",
   "tipMainRemove": "リストから削除",
   "tipMainCancel": "キャンセル",

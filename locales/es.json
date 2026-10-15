@@ -26,7 +26,7 @@
   "lblMainOverwriteSkip": "Omitir",
   "lblMainOverwriteOverwrite": "Sobrescribir",
   "lblMainOverwriteRename": "Conservar ambos",
-  "lblMainDestSource": "Misma carpeta que el origen",
+  "lblMainDestSource": "Carpeta de origen",
   "msgMainNoFfmpeg": "No se encontró el motor de conversión (ffmpeg). Colóquelo junto a la aplicación, o instálelo y añádalo a la variable PATH.",
   "tipMainRemove": "Eliminar de la lista",
   "tipMainCancel": "Cancelar",

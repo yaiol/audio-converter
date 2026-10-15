@@ -26,7 +26,7 @@
   "lblMainOverwriteSkip": "Praleisti",
   "lblMainOverwriteOverwrite": "Perrašyti",
   "lblMainOverwriteRename": "Palikti abu",
-  "lblMainDestSource": "Tas pats aplankas kaip šaltinis",
+  "lblMainDestSource": "Šaltinio aplankas",
   "msgMainNoFfmpeg": "Konvertavimo variklis (ffmpeg) nerastas. Įdėkite jį šalia programos arba įdiekite ir pridėkite prie PATH.",
   "tipMainRemove": "Pašalinti iš sąrašo",
   "tipMainCancel": "Atšaukti",

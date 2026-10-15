@@ -26,7 +26,7 @@
   "lblMainOverwriteSkip": "Ignorar",
   "lblMainOverwriteOverwrite": "Sobrescrever",
   "lblMainOverwriteRename": "Manter ambos",
-  "lblMainDestSource": "Mesma pasta que a origem",
+  "lblMainDestSource": "Pasta de Origem",
   "msgMainNoFfmpeg": "O motor de conversão (ffmpeg) não foi encontrado. Coloque-o ao lado do aplicativo, ou instale-o e adicione-o ao PATH.",
   "tipMainRemove": "Remover da lista",
   "tipMainCancel": "Cancelar",

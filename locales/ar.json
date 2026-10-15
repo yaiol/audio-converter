@@ -26,7 +26,7 @@
   "lblMainOverwriteSkip": "تخطيه",
   "lblMainOverwriteOverwrite": "الكتابة فوقه",
   "lblMainOverwriteRename": "الاحتفاظ بالاثنين",
-  "lblMainDestSource": "نفس المجلد مثل المصدر",
+  "lblMainDestSource": "مجلد المصدر",
   "msgMainNoFfmpeg": "لم يتم العثور على محرك التحويل (ffmpeg). ضعه بجانب التطبيق، أو قم بتثبيته وأضفه إلى PATH.",
   "tipMainRemove": "إزالة من القائمة",
   "tipMainCancel": "إلغاء",
