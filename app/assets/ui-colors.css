@@ -1,0 +1,95 @@
+/* ──────────────────────────────────────────────────────────────────────────
+   Canonical color token palette — SHARED across all electron apps.
+
+   ⚠ SOURCE OF TRUTH: the shared catalog (assets/ui-colors.css)
+   Copied into each app's src/assets/ui-colors.css by sync-shared.js. NEVER edit the
+   per-app copy — edit this file and re-sync. Import FIRST (before the app's own
+   CSS and before ui-app.css/ui-listview.css):  import './assets/ui-colors.css';
+
+   This is the ONE definition of every family colour. Every shared class
+   (ui-app.css / ui-listview.css) resolves against these variables,
+   so a button/dialog/row is byte-identical in every app. CSS-variable apps
+   import this instead of hand-writing :root; JS-theme apps import it too and
+   keep their THEMES object values EQUAL to these (so inline th.* matches).
+
+   The theme is switched by `data-theme` on <html> (light default). App-specific
+   extra tokens (e.g. a --locked accent) stay in the app's own styles.css.
+   ────────────────────────────────────────────────────────────────────────── */
+
+:root, :root[data-theme="light"] {
+  --accent:          #5a4fff;           /* [GUI Standard: accentLight] */
+  --accent-hov:      #4a3fef;           /* [GUI Standard: accentLightHov] */
+  --bg:              #f6f7fb;           /* @palette live=#f6f7fb debug=#00ff00 */
+  --bg-elev:         #ffffff;           /* @palette live=#ffffff debug=#0000ff */
+
+  --bg-row:          #eef0f6;           
+  --bg-hov:          #e3e7f1;           /* base — body/list hover */
+  --bg-input:        #f9f9fc;           /* [GUI Standard: editable-field background — ampl reference] */
+
+  --bar-bgd:         #e6e8ed;           /* @palette live=#e6e8ed debug=#ff1493 */
+  --bar-inp:         #f9f9fc;           /* @palette live=#f9f9fc debug=#ffb6c1 */
+  --bar-hov:         #f1f3f9;           /* @palette live=#f1f3f9 debug=#ff8c00 */
+
+  --dlg-bgd:         #ffffff;           /* @palette live=#ffffff debug=#ffff00 */
+  --dlg-inp:         #f9f9fc;           /* @palette live=#f9f9fc debug=#ffff99 */
+  --dlg-hov:         #e3e7f1;           /* @palette live=#e3e7f1 debug=#9400d3 */
+
+  --pnl-bgd:         #f4f4f8;           /* @palette live=#f4f4f8 debug=#99d9ea */
+  --pnl-inp:         #f9f9fc;           /* @palette live=#f9f9fc debug=#00ffff */  /* placeholder — tune when wired */
+  --pnl-hov:         #e3e7f1;           /* @palette live=#e3e7f1 debug=#ff00ff */  /* placeholder — tune when wired */
+
+  --border:          #d6dae5;
+  --border-strong:   #b8becd;
+  --text:            #1a1d28;
+  --text-dim:        #4f566b;
+  --text-mute:       #8b91a2;
+  --danger:          #d83a47;
+  --warn:            #c47a13;
+  --ok:              #2d9669;
+  --star:            #e0a81e;   /* favourite / default marker (gold) */
+  /* Domain identity colours — a concept's own hue, used per-instance on a .dlp-icon (the
+     dialog-icon rule: colour is semantic per instance) and on the sidebar pseudo-row that
+     stands for that concept. NOT surfaces: a control never paints itself with these. */
+  --tag:             #7b52d8;   /* tags (Untagged row, Tag dialog) */
+  --env:             #1f8f8f;   /* environments (Move-to-environment dialog) */
+  --shadow:          0 4px 16px rgba(20,22,40,.10);
+  --gradient:        linear-gradient(90deg, #7c6fff, #ff6eb4, #4dc8c8, #a78bfa, transparent); /* [GUI Standard: gradient] */
+}
+
+:root[data-theme="dark"] {
+  --accent:          #7c6fff;           /* [GUI Standard: accent] */
+  --accent-hov:      #6a5eef;           /* [GUI Standard: accentHov] */
+  --bg:              #0e0f14;           /* @palette live=#0e0f14 debug=#00ff00 */
+  --bg-elev:         #161821;           /* @palette live=#161821 debug=#0000ff */
+  --bg-row:          #1c1f2a;   
+  --bg-hov:          #232634;           /* base — body/list hover */
+  --bg-input:        #1f1f1f;           /* [GUI Standard: editable-field background — ampl reference] */
+
+  --bar-bgd:         #0d0d14;           /* @palette live=#0d0d14 debug=#ff1493 */
+  --bar-inp:         #1f1f1f;           /* @palette live=#1f1f1f debug=#ffb6c1 */
+  --bar-hov:         #232634;           /* @palette live=#232634 debug=#ff8c00 */
+
+  --dlg-bgd:         #282828;           /* @palette live=#282828 debug=#ffff00 */
+  --dlg-inp:         #1f1f1f;           /* @palette live=#1f1f1f debug=#ffff99 */
+  --dlg-hov:         #232634;           /* @palette live=#232634 debug=#9400d3 */
+
+  --pnl-bgd:         #1c1f2a;           /* @palette live=#1c1f2a debug=#99d9ea */
+  --pnl-inp:         #1f1f1f;           /* @palette live=#1f1f1f debug=#00ffff */  /* placeholder — tune when wired */
+  --pnl-hov:         #232634;           /* @palette live=#232634 debug=#ff00ff */  /* placeholder — tune when wired */
+
+  --border:          #2a2d3a;
+  --border-strong:   #3a3e50;
+  --text:            #e7e9f0;
+  --text-dim:        #9097a8;
+  --text-mute:       #5e6678;
+  --danger:          #ff6e7a;
+  --warn:            #ffb86b;
+  --ok:              #6bd29a;
+  --star:            #f0c040;   /* favourite / default marker (gold) */
+  /* Domain identity colours — a concept's own hue, used per-instance on a .dlp-icon (the
+     dialog-icon rule: colour is semantic per instance) and on the sidebar pseudo-row that
+     stands for that concept. NOT surfaces: a control never paints itself with these. */
+  --tag:             #a78bfa;   /* tags (Untagged row, Tag dialog) */
+  --env:             #4dc8c8;   /* environments (Move-to-environment dialog) */
+  --shadow:          0 4px 16px rgba(0,0,0,.35);
+}

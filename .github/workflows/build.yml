@@ -1,0 +1,154 @@
+name: Build
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    # One leg per OS. fail-fast off: a macOS problem must not throw away a finished Windows build.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: windows
+            os: windows-latest
+            package_types: --package-types nsis
+            files: release/*.exe
+          - name: linux
+            os: ubuntu-latest
+            package_types: --package-types deb --package-types appimage
+            files: |
+              release/*.deb
+              release/*.AppImage
+          - name: macos
+            os: macos-latest
+            package_types: --package-types macos --package-types dmg
+            files: release/*.dmg
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - uses: actions/checkout@v5
+
+      # The WebView on Linux is WebKitGTK, a system library (the list is dx's own `dx doctor` output).
+      # Windows (WebView2) and macOS (WKWebView) ship theirs with the OS.
+      - name: Linux system libraries
+        if: matrix.name == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libasound2-dev libudev-dev \
+            libayatana-appindicator3-dev libxdo-dev libglib2.0-dev
+
+      - name: Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustc --version
+
+      # The dx CLI must match the `dioxus` crate in Cargo.lock (they are released in lockstep).
+      - name: Resolve the dx version
+        id: dx
+        run: |
+          v=$(awk '/^name = "dioxus"$/{getline; gsub(/version = |"/, ""); print; exit}' Cargo.lock)
+          [ -n "$v" ] || { echo "no dioxus crate in Cargo.lock"; exit 1; }
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "dx $v"
+
+      # `cargo install dioxus-cli` is a ~10 minute source build; the version is in the key so a
+      # Dioxus upgrade never reuses an old CLI.
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/bin/dx.exe
+            ~/.cargo/bin/dx
+            target
+          key: rust-${{ runner.os }}-dx${{ steps.dx.outputs.version }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            rust-${{ runner.os }}-dx${{ steps.dx.outputs.version }}-
+
+      # ⚠ CLAUDE: PREBUILT first. A cache cannot carry dx from one release to the next: this workflow
+      # runs on tags only, and GitHub scopes a cache to the ref that made it, so the v1.0.1 run cannot
+      # see what v1.0.0 saved and nothing ever runs on the default branch to share one. dioxus-cli
+      # declares prebuilt binaries for cargo-binstall (package.metadata.binstall), which needs no
+      # cache at all. The source build stays as the fallback, so the worst case is the old behaviour.
+      - name: Install cargo-binstall
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-binstall
+
+      - name: Install the dx CLI
+        shell: bash
+        run: |
+          if command -v dx >/dev/null 2>&1; then
+            echo "dx already present (cached)"
+          elif cargo binstall dioxus-cli@"${{ steps.dx.outputs.version }}" --no-confirm --locked; then
+            echo "dx installed from a prebuilt binary"
+          else
+            echo "no prebuilt dx - building from source"
+            cargo install dioxus-cli --version "${{ steps.dx.outputs.version }}" --locked
+          fi
+
+      # An app that bundles a program of its own (the audio converter's ffmpeg) ships a script that
+      # puts it where Dioxus.toml lists it as a resource. An app without one skips this step.
+      - name: Fetch bundled tools
+        run: |
+          if [ -f scripts/fetch-ffmpeg.sh ]; then
+            bash scripts/fetch-ffmpeg.sh ${{ matrix.name }}
+          else
+            echo "nothing to fetch"
+          fi
+
+      # Out dir is Dioxus.toml's `out_dir = "../release"` → release/ at the repo root.
+      # The AppImage tool is itself an AppImage and a runner has no FUSE, so it is told to unpack and run.
+      - name: Build the installer
+        working-directory: app
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: 1
+        run: dx bundle --desktop --release ${{ matrix.package_types }}
+
+      - name: Upload the installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: installers-${{ matrix.name }}
+          path: ${{ matrix.files }}
+          if-no-files-found: error
+
+  # ONE release job: the only place a release is created. Titled "<product-name> <version>".
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: installers-*
+          merge-multiple: true
+      - name: Create the draft GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          name=$(grep -m1 '^product-name' app/Cargo.toml | cut -d'"' -f2)
+          [ -n "$name" ] || { echo "no product-name in app/Cargo.toml"; exit 1; }
+          # Release body = the top CHANGELOG.md block (first "## …" heading through the line before the next).
+          # GitHub runs bash with -e, so an absent CHANGELOG.md must be handled, not tripped over.
+          : > RELEASE_NOTES.md
+          if [ -f CHANGELOG.md ]; then
+            awk '/^## /{n++} n==1{print} n==2{exit}' CHANGELOG.md > RELEASE_NOTES.md
+          fi
+          [ -s RELEASE_NOTES.md ] || printf 'Release %s\n' "${GITHUB_REF_NAME}" > RELEASE_NOTES.md
+          gh release create "${GITHUB_REF_NAME}" --draft --title "$name $version" --notes-file RELEASE_NOTES.md dist/*

@@ -1,0 +1,923 @@
+/* ──────────────────────────────────────────────────────────────────────────
+   Canonical app chrome — SHARED across all electron apps.
+
+   ⚠ SOURCE OF TRUTH: the shared catalog (assets/ui-app.css)
+   Copied into each app's src/assets/ui-app.css by sync-shared.js. NEVER edit the
+   per-app copy — edit this file and re-sync. Import once, after the app's own
+   CSS:  import './assets/ui-app.css';
+
+   ⚠ LAW ZERO — SHAPE + SIZE live in the BASE, ONCE. A variant / context may change
+   COLOUR (and only colour). Two classes that are the same control (.btn/.btn.icon, the
+   field family, the pill family) SHARE one base rule for geometry; they never each
+   re-declare height / radius / border / padding / weight. See CLAUDE-ui-standards-v2.md.
+
+   NAMING — by orientation. A bar is named for WHAT it is, not WHERE it sits:
+     barh-*  horizontal-bar family: .barh-header, .barh-footer + their furniture, .barh-grp weld.
+     barv-*  vertical-bar family:   .barv-tools + .barv-grp weld.
+     bar-*   orientation-NEUTRAL controls usable in ANY bar: .btn.icon atom, .barh-sep, .bar-spacer.
+   The list/nav PANEL region (.pnl-*, §6) and dialogs (.dlg-*, §5) are SEPARATE surfaces.
+
+   TOKEN CONTRACT — :root must define (both themes):
+     --bg --bg-elev --bg-row --bg-hov --bg-input
+     --bar-bgd --bar-inp --bar-hov   --dlg-bgd --dlg-inp --dlg-hov   --pnl-bgd --pnl-inp --pnl-hov
+     --border --border-strong --accent --accent-hov --text --text-dim --text-mute --ok --warn --danger --gradient --shadow
+
+   SECTIONS below:
+     1. App                 1.1 App frame · 1.2 Overlays (file-drop, toast)
+     2. Standard controls   2.1 Buttons · 2.2 Fields (+hint) · 2.3 Pills & badges · 2.4 Menu · 2.5 Tabs
+     3. Update banner   4. Bars   5. Dialogs & modals   6. Panel   7. Settings view
+   ────────────────────────────────────────────────────────────────────────── */
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   1. APP
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ─── 1.1 App frame ──────────────────────────────────────────────────────── */
+
+/* Pins the header + statusbar and scrolls ONLY the content between them, so the scrollbar lives
+   INSIDE the view, not the window. Root gets .app-root; each growable region gets .app-scroll +
+   an axis modifier: .app-scroll-y (the usual case) / .app-scroll-x (add alongside -y for a wide
+   grid). Each modifier maps 1:1 to overflow-<axis>:auto. */
+.app-root { height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+.app-scroll { flex: 1; min-height: 0; overflow: hidden; }
+.app-scroll-y { overflow-y: auto; }
+.app-scroll-x { overflow-x: auto; }
+
+/* App content region — the single growable area between the header and any footer/statusbar (both
+   pinned chrome, siblings of this, never inside it). The ONE position:relative region per app, so
+   it anchors any content-scoped overlay (file-drop blur, loading scrim, empty state) — those cover
+   .app-main and leave the chrome sharp. NOT a scroller: put the real .app-scroll INSIDE it. */
+.app-main { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
+
+/* Scrollbar — ONE thin themed bar for every scroll region. Chromium (Electron) only. Never
+   re-style locally. */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; min-height: 30px; min-width: 30px; }
+::-webkit-scrollbar-thumb:hover { background: var(--accent); }
+
+/* ─── 1.2 Overlays — file-drop, toast ────────────────────────────────────── */
+
+/* File-drop overlay — the look for "drag a file onto this region to open it". Behaviour lives in the
+   useFileDrop hook (lib/ui-fx-filedrop.jsx). position:absolute so it covers its nearest POSITIONED
+   ancestor (attach dropProps to a position:relative region — e.g. the content area, so the blur
+   excludes the header); pointer-events:none so the drop falls through. Seed: ai-music-seed. */
+.drop-overlay {
+  position: absolute; inset: 0; z-index: 9999;
+  display: flex; align-items: center; justify-content: center;
+  background: color-mix(in srgb, var(--accent) 13%, transparent);
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  border: 3px dashed var(--accent); border-radius: 8px;
+  pointer-events: none;
+}
+.drop-overlay-label { font-size: 18px; font-weight: 700; color: var(--accent); }
+
+/* Toast — the ONE transient "it happened" message: a centered pill floating over the bottom of the
+   window, self-dismissing, never interactive (pointer-events:none — it must never eat a click).
+   An ACCENT fill — the same colour set as .btn.primary (accent bg + border, #fff text), so the pill
+   reads instantly over any surface it floats above and carries the app's identity colour. Long
+   messages WRAP inside a capped width — never nowrap, which runs a translated string off-screen. Behaviour
+   (a showToast(msg) + timeout) stays app-side; only the look lives here. An app whose bottom chrome
+   would cover it lifts it with --toast-bottom (the .chip pattern — a per-instance value, never a
+   re-shape). Seeds: ai-music-prompt-lab, lrc-editor. */
+@keyframes toastIn { from { opacity: 0; transform: translateX(-50%) translateY(8px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
+.toast {
+  position: fixed; bottom: var(--toast-bottom, 28px); left: 50%; transform: translateX(-50%);
+  /* ⚠ CLAUDE: MUST sit above .dl-backdrop (1000) and .pop-surface (1000). It was 200 — below both —
+     so every notice fired while a dialog was open rendered UNDER the backdrop and was read through
+     its blur(5px): dimmed, smeared, unreadable. Nothing about the notice was wrong, including plain
+     successes like "Copied" from inside a card dialog; they were simply painted behind a frosted
+     sheet. A stacking order nobody chose, not a design decision (found 2026-09-07). A notice that
+     cannot be read is not a notice — if a value here ever has to drop below 1000, the toast has to
+     stop being the channel first. */
+  z-index: 1200;
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 30px;
+  box-shadow: var(--shadow);
+  padding: 12px 24px;
+  color: #fff; font-size: 14px; text-align: center;
+  max-width: min(560px, 90vw);
+  pointer-events: none;
+  animation: toastIn 0.22s ease;
+}
+
+/* ─── Surface → role bindings ──────────────────────────────────────────────
+   Each surface CONTAINER announces two colour roles; every control READS them (--s-inp
+   field fill, --s-hov control hover) and NEVER names a surface. Body is the default;
+   bars / dialogs / panels rebind. This is what makes a control's colour flow from WHERE
+   it sits — a control cannot be wrong-coloured, because it never picks a surface colour. */
+:root { --s-inp: var(--bg-input); --s-hov: var(--bg-hov); }
+.barh-header, .barh-subbar, .barh-footer, .barv-tools, .bar-status { --s-inp: var(--bar-inp); --s-hov: var(--bar-hov); }
+.dlg, .dlg-form, .dlp { --s-inp: var(--dlg-inp); --s-hov: var(--dlg-hov); }
+.pnl { --s-inp: var(--pnl-inp); --s-hov: var(--pnl-hov); }
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   2. STANDARD CONTROLS
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ─── 2.1 Buttons — .btn (text) + .btn.icon (icon), small tier, welds ──────── */
+
+/* ⚠ LAW ZERO — ONE base for SHAPE + SIZE. `.btn` (text) and `.btn.icon` (icon) SHARE this base and
+   differ ONLY in colour + the horizontal room a text label needs. Variants (.primary / .subtle /
+   .active) RECOLOUR — never re-shape. Do NOT re-declare height / radius / border / weight on either
+   one. A .btn is the text twin of the icon button: same transparent surface + 1px frame + hover
+   fill; never give a plain .btn an opaque fill. (A dialog's button recolour lives in §5.) */
+.btn, .opt-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  height: 30px; box-sizing: border-box;
+  background: transparent;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  cursor: pointer;
+  font-family: inherit; font-size: 13px; font-weight: 500;
+  flex-shrink: 0; /* a bar/footer/dialog control never deforms */
+  padding: 0 12px;                    /* the default (text-button) footprint — owned ONCE in the base */
+  transition: background .12s, border-color .12s, color .12s;
+}
+.btn      { gap: 6px; color: var(--text); }                          /* text button — padding from the base */
+.btn.icon { gap: 5px; min-width: 30px; padding: 0; color: var(--text-dim); position: relative; }   /* relative = the containing block for a `.count.over`; inert otherwise */   /* icon button — a 30px square (grows only for a count badge); padding reset from the base */
+.btn:hover:not(:disabled) { background: var(--s-hov); color: var(--text); }   /* hover fill from the SURFACE (bar/dialog/panel/body bind --s-hov); icon buttons brighten to --text */
+.btn:disabled, .opt-btn:disabled { opacity: .4; cursor: not-allowed; }
+/* ⚠ CLAUDE: the icon never shrinks — a width-constrained .btn.icon (forced to bar width in a
+   .barv-grp) would otherwise flex-shrink its glyph to the content box (the "tiny icons" bug).
+   ⚠ CLAUDE: an icon inside a control is sized BY THE CONTROL here — never a per-icon `size=` prop on
+   the element (that is inline geometry). Set the icon size on the control's svg; drop `size=` in JSX. */
+.btn > svg { flex-shrink: 0; width: 14px; height: 14px; }
+/* Colour variants — RECOLOUR only. */
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn.primary:hover:not(:disabled) { background: var(--accent-hov); border-color: var(--accent-hov); color: #fff; }
+.btn.subtle { background: transparent; border-color: transparent; color: var(--text-dim); }   /* FRAME variant — borderless */
+.btn.subtle:hover:not(:disabled) { background: var(--s-hov); color: var(--text); }
+.btn.active { color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+
+/* ── SMALL tier — the button family at a SECOND size (20px). SIZE variant; geometry written ONCE,
+   mirroring the base at the top of §2.1 (`.btn, .btn.icon, .opt-btn { height:30 }`). A small
+   BORDERLESS icon is just `.btn.icon.small.subtle` (size × frame variants) — there is NO separate
+   "icon button" control. Icon ~14px — the consumer sets size={14}. ── */
+.btn.small, .opt-btn.small {
+  height: 20px; box-sizing: border-box;
+  border-radius: 5px;
+}
+.btn.icon.small { min-width: 20px; }   /* small icon square — mirrors `.btn.icon { min-width: 30px }` */
+
+/* ── Option-selector buttons (.opt-btn in a .opt-btns row) — a labelled, mutually-exclusive choice:
+      icon + label pills, exactly ONE `.active`. The theme picker (Dark/Light) AND any labelled selector
+      (e.g. ampl's prompt-type row) are the SAME control. .opt-btn shares the .btn base above; adds only
+      its deltas. Active colour is the accent, per-instance overridable via an inline `--accent`. ── */
+/* A row of option buttons. They stretch to fill it; a row that must stay CONTENT-SIZED (options
+   beside other controls, not a form row of their own) sets `--opt-btn-flex: 0 0 auto` on itself
+   — the token is the base's, so no one re-declares the button's geometry to get there. A row whose
+   labels are CODES rather than words sets `--opt-btn-font` to the mono stack the same way. */
+.opt-btns { display: flex; gap: 12px; }
+.opt-btn { flex: var(--opt-btn-flex, 1); gap: 8px; color: var(--text-dim); font-family: var(--opt-btn-font, inherit); }   /* an option button IS a .btn (base) — here only: stretch to fill the row + default-dim + icon↔label gap */
+.opt-btn svg { width: 16px; height: 16px; }
+.opt-btn:hover { color: var(--text); border-color: var(--text-dim); }
+/* Active — accent border + text + a 14% accent tint (same canonical active fill as .btn.icon.active /
+   .lv-item.active), all accent-driven so a per-instance inline `--accent` recolours it in both themes. */
+.opt-btn.active { border-color: var(--accent); color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.opt-btn.active span { font-weight: 700; }
+
+/* ─── 2.2 Fields — text / search / numfield / select / checkbox / date ───── */
+
+/* ⚠ LAW ZERO — FIELD BASE: the ONE shape/size of every single-line field. Declared ONCE; each field
+   below adds only its FILL (context-driven) + its own internals (caret / steppers / glyph / padding).
+   NEVER re-declare height / radius / border on a field. (.textarea, in §5, shares the
+   look but GROWS, so it keeps its own height — the one legit exception.)
+   :where() → ZERO specificity: this is the DEFAULT shape, so a composition that wraps a field (the weld)
+   overrides it with a plain 1-class selector. That's why a grouped numfield needs NO numfield-specific
+   weld rule — `.barh-grp > *` strips its border generically, exactly like it does a .btn.icon. */
+:where(.input, .search, .numfield, .dp-field, .field-trigger) {
+  height: 30px; box-sizing: border-box;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-family: inherit; font-size: 13px;
+  padding: 0 12px;                     /* the ONE field padding — owned here, never re-declared per field */
+}
+
+/* Text input — the plain single-line field. Fill from the surface (--s-inp); shape from the base above.
+   Numeric inputs use the shared NumberField (.numfield), NOT a native <input type="number"> on .input. */
+.input {
+  background: var(--s-inp);
+  color: var(--text);
+  outline: none;
+  width: 100%;
+}
+.input:focus { border-color: var(--accent); }
+
+/* Field trigger — a BUTTON that looks like a field and opens a custom popup (a rich dropdown a native
+   <select> can't do, e.g. ampl's env switcher). Shares the field box; adds only its content layout +
+   open state. The consumer supplies the content (label + its own chevron). */
+.field-trigger {
+  display: flex; align-items: center; justify-content: space-between; gap: 6px;
+  width: 100%; text-align: left; cursor: pointer;
+  background: var(--s-inp); color: var(--text); outline: none;
+}
+.field-trigger:hover { border-color: var(--text-dim); }
+.field-trigger.open { border-color: var(--accent); }
+
+/* Multi-line text — same field look, but the ONE control not height-locked (it grows). */
+.textarea {
+  width: 100%; box-sizing: border-box;
+  padding: 8px 12px;
+  background: var(--s-inp);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-family: inherit; font-size: 13px; line-height: 1.5;
+  outline: none;
+  resize: vertical;
+}
+.textarea:focus { border-color: var(--accent); }
+
+/* Search field — glyph + borderless input in the field pill. Generic (no bar- prefix — also lives
+   in panels). .barh-search adds the horizontal-fill behaviour for a search that stretches across a
+   bar; its max-width is a sanctioned PER-INSTANCE inline cap (differs per bar). Seed: icoc. */
+.search {
+  display: flex; align-items: center; gap: 8px;   /* gap = its own internal glyph↔input spacing */
+  background: var(--s-inp);   /* field fill from the surface */
+}
+.search:focus-within { border-color: var(--accent); background: var(--s-inp); }
+.search-glyph { display: flex; flex-shrink: 0; color: var(--text-mute); }
+.search-glyph > svg { width: 14px; height: 14px; }   /* icon sized by the control, not a size= prop */
+.search-input {
+  flex: 1; min-width: 0;
+  background: transparent; border: none; outline: none;
+  color: var(--text);
+  font-family: inherit; font-size: 13px;
+}
+.search-input::placeholder { color: var(--text-mute); }
+.search-clear {
+  display: inline-flex; align-items: center; justify-content: center;
+  flex-shrink: 0; padding: 2px; border: none; border-radius: 4px;
+  background: transparent; color: var(--text-mute); cursor: pointer;
+  transition: background .12s, color .12s;
+}
+.search-clear:hover { background: var(--s-hov); color: var(--text); }
+
+/* Numeric field with themed ▲▼ steppers (component: NumberField). Context sets the fill
+   (header/footer vs dialog), like the inputs. The sanctioned custom stepper. */
+.numfield {
+  display: inline-flex; align-items: stretch;
+  padding: 0;                          /* composite (input + steppers, flush) — opts out of the base 0 12px */
+  background: var(--s-inp);
+  overflow: hidden;
+  flex-shrink: 0; /* holds its width in a bar — else only the input half squeezes */
+}
+.numfield:focus-within, .numfield.is-active { border-color: var(--accent); }
+.numfield-input {
+  flex: 1; min-width: 0;
+  border: none; outline: none; background: transparent;
+  color: var(--text); font-family: 'JetBrains Mono', monospace; font-size: 13px;
+  padding: 0 8px; -moz-appearance: textfield;
+}
+.numfield-input::-webkit-inner-spin-button,
+.numfield-input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+.numfield-steppers { display: flex; flex-direction: column; flex-shrink: 0; width: 16px; border-left: 1px solid var(--border); }
+.numfield-step {
+  flex: 1; display: flex; align-items: center; justify-content: center;
+  padding: 0; border: none; background: transparent; color: var(--text-mute);
+  cursor: pointer; transition: background .12s, color .12s;
+}
+.numfield-step:hover:not(:disabled) { background: var(--s-hov); color: var(--text); }
+.numfield-step:disabled { cursor: not-allowed; opacity: .4; }
+.numfield-step + .numfield-step { border-top: 1px solid var(--border); }
+/* Fill + step-hover come from the base above (--bg-input / --bg-hov): the numfield keeps ONE look on
+   any surface — a bar is just a container. Dialog-context fill → §5. */
+
+/* Dropdown select — the ONE select, bordered pill + shared caret. Fill is transparent by default (a
+   ghost pill on any bar); a dialog fills it (+ width:100%) — that context rule lives in §5.
+   Unified from the former bar-select + dialog-select. Seed: markzen.
+   ⚠ CLAUDE: geometry is set DIRECTLY here, NOT via the :where() field base — a native <select>
+   sizes its popup OPTION rows from the box authored on the element itself, and a zero-specificity
+   :where() rule crushed that (the "lack of breathe" regression). This is the one field that can't
+   ride the shared base; keep the values in lock-step with it by hand. */
+.select {
+  height: 30px; box-sizing: border-box;
+  padding: 0 32px 0 12px;              /* right = caret room */
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-family: inherit; font-size: 13px;
+  background-color: transparent;
+  color: var(--text);
+  cursor: pointer; outline: none;
+  appearance: none; -webkit-appearance: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238b91a2' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 11px center;
+}
+.select:hover { border-color: var(--text-dim); }
+.select:focus { border-color: var(--accent); }
+/* .select is the ONE field that can't ride the surface roles (a native popup sizes its rows off the
+   element's own box), so its dialog fill + width are set explicitly here, not inherited via --s-inp. */
+.dlg .select, .dlg-form .select { background-color: var(--dlg-inp); width: 100%; }
+
+/* Checkbox — `.check-box` (the box) + optional `.check-label` (the <label> wrapper). The box class goes
+   on the <input type="checkbox"> ITSELF, so it's a context-neutral control (dialog, panel, anywhere) —
+   not trapped in a descendant. Unchecked fill = the surface (--s-inp); checked = accent. Tick = ::after. */
+.check-box {
+  appearance: none; -webkit-appearance: none;
+  width: 16px; height: 16px; flex-shrink: 0;
+  background: var(--s-inp);
+  border: 1px solid var(--border); border-radius: 4px;
+  cursor: pointer; position: relative;
+}
+.check-box:checked { background: var(--accent); border-color: var(--accent); }
+.check-box:checked::after {
+  content: ''; position: absolute; left: 4px; top: 1px;
+  width: 4px; height: 8px; border: solid #fff; border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+/* Optional label wrapper — put on a <label> around the box to get a clickable "box + text" row. Shared
+   by the checkbox AND the radio (below). All-global colour (label text = --text), so it's usable on ANY
+   surface (dialog, panel, settings). */
+.check-label {
+  display: inline-flex; align-items: center; gap: 8px;
+  color: var(--text); font-size: 13px; cursor: pointer;
+}
+
+/* Radio — the pick-ONE-of-a-set inline control. Same box (`.radio-box` on the <input type="radio">
+   itself), same surface fill + accent-when-selected as `.check-box`; only round, with a filled dot
+   instead of a tick. Wrap each in a `.check-label` (shared) and give the group one `name`. For a
+   pick-one that's a prominent full-row choice (e.g. the theme switch), use `.opt-btn` instead. */
+.radio-box {
+  appearance: none; -webkit-appearance: none;
+  width: 16px; height: 16px; flex-shrink: 0;
+  background: var(--s-inp);
+  border: 1px solid var(--border); border-radius: 50%;
+  cursor: pointer; position: relative;
+}
+.radio-box:checked { border-color: var(--accent); }
+.radio-box:checked::after {
+  content: ''; position: absolute; left: 4px; top: 4px;
+  width: 8px; height: 8px; border-radius: 50%; background: var(--accent);
+}
+
+/* The Knob (`.knob*`) moved out of the core into `ui-ctl-knob.css` (2026-09-05):
+   it skins an optional control, and now travels with it — see CLAUDE-ui-standards-v2.md → "Core vs optional control". */
+
+/* Hint — the ONE muted description text (under a label/control, a section note, a status line).
+   Prose, so it inherits Inter (never JetBrains Mono). Used on ANY surface (dialog, bar, panel).
+   Add `.mono` ONLY for code-like content (a filename, a token, a timecode) — never a sentence. */
+.hint { margin: 0; font-size: 12px; color: var(--text-mute); line-height: 1.5; font-family: inherit; }
+.hint.mono { font-family: 'JetBrains Mono', 'Fira Code', monospace; }
+.hint.warn { color: var(--warn); }
+
+/* ─── 2.3 Pills & badges — .chip / .barh-app-version (pill) + .count ──────── */
+
+/* ⚠ LAW ZERO — PILL BASE: the ONE shape/size of every small pill (.chip, .barh-app-version).
+   Declared ONCE. Each adds only its COLOUR (border-color + text). NEVER re-declare radius / padding /
+   gap / font on a pill. (.count is a FILLED badge — its own thing, below.) Seeded from ampl's pills. */
+.chip, .barh-app-version {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 2px 6px;
+  border-width: 1px; border-style: solid;
+  border-radius: 999px;
+  background: transparent;
+  font-family: inherit; font-size: 11px;
+  white-space: nowrap;
+  transition: background .12s, border-color .12s, color .12s, opacity .12s;
+}
+
+/* Chip — the ONE pill for every label / filter / category (tag + chip, merged). Colour via the
+   `--chip` custom property (sets border + text in one shot), defaulting to a neutral outline. The
+   ELEMENT decides interactivity: on a <span> it's a static label; on a <button> it's a clickable
+   filter/action (cursor + hover below) — and a clickable one is a real <button> (focus / keyboard for
+   free). Add `.on` for the selected state; a visible counter is a `.count` badge inside it. */
+.chip { border-color: var(--chip, var(--border-strong)); color: var(--chip, var(--text-mute)); }
+.chip > svg { display: block; flex-shrink: 0; width: 1em; height: 1em; }   /* icon matches the chip's text size, so a chip with an icon is the same height as one without */
+/* Selected/active — a 40% wash of the chip's OWN colour as fill, black text for contrast; the border
+   keeps the chip colour. (An uncoloured chip falls back to an accent wash.) */
+.chip.on { background: color-mix(in srgb, var(--chip, var(--accent)) 40%, transparent); color: #000; }
+button.chip { cursor: pointer; }
+button.chip:hover { opacity: .8; }
+
+/* Count badge — a small FILLED accent pill (its own thing, not on the pill base — filled, no
+   border). Sits inside a .btn.icon. Seed: icoc. */
+.count {
+  font-size: 11px; font-weight: 600;
+  background: var(--accent); color: #fff;
+  border-radius: 999px; padding: 0 6px; min-width: 16px; text-align: center;
+}
+
+/* Count ON the icon (`.count.over`) — the same job as .count, how many are waiting, but placed
+   INSIDE the icon square instead of beside it. Use it when the button must KEEP its geometry: a
+   plain .count is an inline pill, so it widens `.btn.icon` (which is documented as growing for
+   exactly that) — and a column of icon buttons stops lining up the moment one of them is wider.
+   ⚠ CLAUDE: no fill and no pill here. At this size a filled badge is a blob, and the glyph behind it
+   already carries the meaning; the digit is an annotation ON that glyph. INK, not the button's
+   colour — the number is DATA (how many), not state (what kind), and the button's own colour is
+   what says the state. A token, so the dark theme flips it like everything else.
+   The absolute positioning needs a containing block, which is why `.btn.icon` is relative below —
+   inert on its own, so it costs nothing for the buttons that carry no count. Seed: apps-cockpit's
+   buffered-commits button. */
+.count.over {
+  position: absolute; right: 1px; bottom: -1px;
+  background: none; color: var(--text);
+  font-size: 9px; font-weight: 700; line-height: 1;
+  padding: 0; min-width: 0;
+  pointer-events: none;
+}
+
+/* Colour swatch — the clickable colour square (colorpicker launcher + palette cells).
+   GEOMETRY only; a swatch's COLOUR (its background + its selected/open ring) is data, so that stays
+   inline on the element. Base = the 28px launcher; `.small` = the 22px palette cell (the one
+   sanctioned compact tier, LAW ZERO); `.on` = selected/open (white frame). */
+.swatch { width: 28px; height: 28px; border-radius: 6px; border: 2px solid var(--border-strong); padding: 0; cursor: pointer; flex-shrink: 0; transition: all .15s; }
+.swatch.small { width: 22px; height: 22px; border-radius: 4px; border-color: transparent; }
+.swatch.on { border-color: #fff; }
+
+/* ─── 2.4 Popover family — one floating panel, shared look, three controls ──────
+   The `Popover` mechanism (lib/ui-ctl-popover.jsx) portals a `.pop-surface` and positions it against
+   an anchor (below / flip-up, edge-anchored, click-away, Esc). Every floating dropdown rides it —
+   `Menu` (pick-one-action), `Combobox` (type-to-filter), `Switcher` (pick-one-value + per-row
+   actions) — so none re-implements the portal (the old cause of dropdowns clipping in a scroll box).
+   The shared LOOK is `.pop-surface` (the panel) + `.pop-item` (a row); each control adds only its
+   own extras. NEVER hand-roll an `open && <div style={{position:absolute}}>` dropdown again. */
+.pop-surface {
+  position: fixed; z-index: 1000;   /* Popover sets top/left/right/bottom inline */
+  width: max-content; overflow-y: auto;   /* size to widest row; floored/capped by inline min/max-width */
+  padding: 4px;
+  background: var(--bg-elev); border: 1px solid var(--border-strong);
+  border-radius: 8px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+}
+.pop-item {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%; padding: 6px 12px;
+  border: none; border-radius: 6px; background: none;
+  color: var(--text); font-family: inherit; font-size: 13px; text-align: left; cursor: pointer;
+  white-space: nowrap;   /* one line per row → the widest row sets the panel width */
+}
+.pop-item > svg { width: 16px; height: 16px; flex-shrink: 0; }   /* optional leading icon */
+.pop-item:hover:not(:disabled) { background: var(--bg-hov); }
+.pop-item.hi { background: var(--bg-hov); }   /* keyboard-highlighted row (Combobox ↑/↓ nav) */
+.pop-item:disabled { opacity: 0.4; cursor: not-allowed; }
+.pop-item.active { color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.pop-dim { color: var(--text-mute); }   /* muted trailing detail in a row (e.g. a language code) */
+
+/* Popover FORM rows — a panel of labelled controls rather than pickable rows. Same relationship to
+   `.pop-surface` that `.dlg-field` has to `.dlg`, and deliberately the same label look, so a
+   "set these few options" panel reads identically whether it opens under a toolbar button or in a
+   dialog. Use for a small settings panel (markzen's appearance: style + 3 fonts); anything the user
+   PICKS from a list is still `.pop-item`.
+   ⚠ The `min-width` is load-bearing and belongs HERE, not at a call site: `.pop-surface` is
+   `width: max-content` (it sizes to its widest ROW, which is right for a list of labels), and a
+   `<select>`'s content width is whatever option happens to be selected — so without a floor the
+   panel visibly resizes as you change a value, and an icon-button anchor gives `minWidthAnchor`
+   nothing useful to floor against. */
+.pop-form { display: flex; flex-direction: column; gap: 10px; padding: 6px 8px; min-width: 200px; }
+.pop-field { display: flex; flex-direction: column; gap: 4px; }
+.pop-field-label {
+  font-size: 11px; letter-spacing: 1px; text-transform: uppercase;
+  font-weight: 600; color: var(--accent);
+}
+
+/* Menu — adds section labels, a right-aligned caret, and one level of hover-submenu on the pop base. */
+.menu-title { padding: 4px 12px; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; color: var(--text-dim); }
+.menu-label { padding: 2px 12px; font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-dim); }
+.menu-divider { border-top: 1px solid var(--border); margin: 4px 0; }
+.menu-caret { font-size: 10px; color: var(--text-dim); margin-left: auto; }
+.menu-item-parent { cursor: default; }
+.menu-sub { position: relative; }
+.menu-sub:hover > .menu-item-parent { background: var(--bg-hov); }
+/* Nested submenu — a .pop-surface beside its parent row. It is PORTALLED and positioned by
+   Popover (placement="side"), so it must NOT be positioned here: it used to be
+   `position:absolute; left:100%`, a child of the panel — which `.pop-surface`'s own
+   `overflow-y:auto` then clipped away entirely (an overflow box clips on both axes), making
+   every submenu unreachable as soon as the menu was tall enough to scroll. The class is now a
+   marker only: it tags the flyout so the parent popover's click-away ignores it, and carries no
+   style of its own — hence no `.menu-flyout` rule below. Do not add position/top/left here. */
+
+
+/* ─── 2.5 Tabs — a standard nav control (dialogs today; usable on any surface) ── */
+
+/* Tab bar — tabs use their OWN height, independent of the control height. Colours are global
+   (text-dim → text → accent), so tabs work on any surface with no surface role binding.
+   The BASE owns both edges a strip can be marked on — bottom (the row) and right (the vertical
+   rail) — as tokens: the edge width, the active mark width and the 1px overlap that lets the mark
+   cover the strip's border. A variant only switches which edge is on; it draws no shape. */
+.tabs {
+  display: flex; flex-direction: var(--tabs-axis, row); flex-shrink: 0;
+  border-bottom: var(--tabs-edge-b, 1px) solid var(--border);
+  border-right: var(--tabs-edge-r, 0) solid var(--border);
+}
+.tab {
+  display: flex; align-items: center; gap: 6px;
+  height: 30px; padding: 0 16px;          /* tab height — tune here, decoupled from controls */
+  box-sizing: border-box;
+  background: none; border: none;
+  border-bottom: var(--tab-mark-b, 2px) solid transparent;
+  border-right: var(--tab-mark-r, 0) solid transparent;
+  margin-bottom: var(--tab-ov-b, -1px); margin-right: var(--tab-ov-r, 0);
+  color: var(--text-dim);
+  cursor: pointer;
+  font-family: inherit; font-size: 13px; font-weight: 500;
+  transition: color .12s, border-color .12s;
+}
+.tab:hover { color: var(--text); }
+.tab.active { color: var(--accent); border-color: var(--accent); font-weight: 700; }
+.tab > svg { width: 14px; height: 14px; flex-shrink: 0; }   /* tab icon sized by the control, not a size= prop */
+/* Vertical rail — the SAME tabs stacked down a left edge, the active mark on the edge that
+   touches the content (right). Tokens only: the tab's height, padding and type are the row's,
+   and the shapes are the base's. For a body where height is scarce. */
+.tabs.vertical {
+  --tabs-axis: column; --tabs-edge-b: 0; --tabs-edge-r: 1px;
+  --tab-mark-b: 0; --tab-mark-r: 2px; --tab-ov-b: 0; --tab-ov-r: -1px;
+  align-self: stretch;
+}
+
+/* The step grid (`.stepgrid*`) moved out of the core into `ui-ctl-stepgrid.css` (2026-09-05):
+   one app renders it, and it was 12 KB of the 62 KB every app carries — see CLAUDE-ui-standards-v2.md → "Core vs optional control". */
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   3. UPDATE BANNER  — "a new version is available" strip (lib/ui-update-banner.jsx)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Pinned above the header (notify-only, dismissible). ONE shell for every app; rendered by the
+   shared component (never hand-build the markup). See app/electron/CLAUDE.md → "Update Check". */
+.update-banner {
+  background: var(--bg-elev);
+  border-bottom: 1px solid var(--border);
+  padding: 8px 12px;
+  flex-shrink: 0;
+  font-size: 13px;
+  color: var(--text);
+}
+.update-banner-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.update-banner-label  { color: var(--accent); font-weight: 600; }
+.update-banner-spacer { flex: 1; }
+.update-banner-link {
+  background: none; border: none; color: var(--text-mute);
+  cursor: pointer; padding: 0; font-size: 13px;
+}
+.update-banner-link:hover  { color: var(--text); }
+.update-banner-link.skip   { text-decoration: underline; }
+.update-banner-download {
+  background: var(--accent); color: #fff; border: none;
+  border-radius: 4px; padding: 4px 12px; cursor: pointer;
+  font-size: 13px; font-weight: 600;
+}
+.update-banner-download:hover { background: var(--accent-hov); }
+.update-banner-dismiss {
+  background: none; border: none; color: var(--text-mute);
+  cursor: pointer; padding: 0; display: inline-flex; align-items: center;
+}
+.update-banner-dismiss:hover { color: var(--text); }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   4. BARS  — header / footer / vertical toolbar / statusbar + header furniture
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Bar gaps — ONE source each, all tokens (no literals), so a header/footer/status gap changes in
+   one place. Three tokens kept distinct (can diverge later); currently all 8px. JS-theme inline
+   bars read the same tokens (`gap: var(--header-gap)`), never a re-typed literal. */
+:root {
+  --header-gap:    8px;   /* header bar  — between logo / search / button-groups */
+  --footer-gap:    8px;   /* footer bar  — between controls */
+  --statusbar-gap: 8px;   /* status strip — between info items */
+}
+
+/* Header bar (GUI Standard Rule 9). z-index MUST beat .barh-gradient below: the header establishes
+   the stacking context that header flyout menus live in, so its subtree (open menus) paints OVER
+   the separator, not under it. No border — the 2px gradient bar (Rule 10) is the separator. */
+.barh-header {
+  display: flex; align-items: center; flex-wrap: wrap; gap: var(--header-gap);
+  padding: 10px 16px;
+  background: var(--bar-bgd);
+  position: sticky; top: 0; z-index: 20;
+}
+
+/* App name — plain bold text (unscoped from .barh-header so JS-theme inline headers get it too). */
+.barh-app-name {
+  font-size: 17px; font-weight: 700; letter-spacing: -0.5px; /* [GUI Standard: appNameFontSize] */
+  color: var(--text); white-space: nowrap;
+}
+/* Version badge — furniture, but its SHAPE is the PILL BASE (§2.3); here only the colour is fixed to
+   accent (LAW ZERO: recolour, don't re-shape). Unscoped so JS-theme inline headers get it too. */
+.barh-app-version { border-color: var(--accent); color: var(--accent); }
+
+/* Bar spacer — the flex gap that pushes a trailing button-group to the far edge of a bar.
+   Orientation-neutral (header, footer, any bar). */
+.bar-spacer { flex: 1; }
+
+/* Identity bar (GUI Standard Rule 10) — the 2px gradient separator under the header. */
+.barh-gradient {
+  height: 2px;
+  background: var(--gradient); /* [GUI Standard: gradient] */
+  flex-shrink: 0;
+  position: sticky; top: 48px; z-index: 10;
+}
+
+/* Header sub-bar (optional, BELOW the identity separator) — a secondary strip (tag / filter bar)
+   from AppHeader's `subBar` slot. Same surface + gaps as the header, so the two read as one unit
+   split by the gradient. flex-wrap so a long tag list flows onto more rows. Seed: ampl. */
+.barh-subbar {
+  display: flex; align-items: center; flex-wrap: wrap; gap: var(--header-gap);
+  padding: 6px 16px;
+  background: var(--bar-bgd);
+  flex-shrink: 0;
+}
+
+/* View top-bar (Model B) — the CONTENT-zone counterpart of .barh-subbar. A strip at the TOP of a
+   content zone (right of a sidebar / above a grid or list) that SCOPES that view: filters on the
+   left, an optional selection cluster on the right (push it with margin-left:auto). It belongs to
+   the VIEW, not the header — so it wears the CONTENT surface (--pnl-bgd + a hairline rule), NEVER
+   the header's --bar-bgd, and controls inside read the panel surface roles. The rule of thumb:
+   header = acts-on-the-app; view-topbar = acts-on-the-view. Shared by ampl (tag filter) + the
+   apps-cockpit (env/todo filters + batch actions). Same shape as .barh-subbar, content surface. */
+.view-topbar {
+  --s-inp: var(--pnl-inp); --s-hov: var(--pnl-hov);
+  display: flex; align-items: center; flex-wrap: wrap; gap: var(--header-gap);
+  padding: 6px 16px;
+  background: var(--pnl-bgd);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+/* Footer bar — the bottom twin of .barh-header (GUI Standard Rule 9). ONE fixed height everywhere,
+   so every app's footer is byte-identical. Carries CONTROLS (distinct from .bar-status). App sets
+   its own position (in-flow, or fixed-bottom for an overlay player). */
+.barh-footer {
+  display: flex; align-items: center; gap: var(--footer-gap);
+  height: 42px; box-sizing: border-box;
+  padding: 0 10px;
+  background: var(--bar-bgd);
+  border-top: 1px solid var(--border);
+  backdrop-filter: blur(12px);
+  flex-shrink: 0;
+}
+
+/* Vertical action bar — a slim vertical strip of welded icon buttons on the bar surface, pinned to
+   a window edge. The vertical twin of the header's horizontal groups. Holds .barv-grp welds of
+   .btn.icon icons. Seed: ampl (left action rail). */
+.barv-tools {
+  display: flex; flex-direction: column; align-items: center;
+  gap: 4px; padding: 6px 4px;
+  background: var(--bar-bgd);
+  border-right: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+/* Status bar — the app's bottom INFO strip (status word, counts, a path): DISTINCT from
+   .barh-footer (which carries controls). Pinned sticky-bottom by default. .ok/.warn/.err colour
+   the status word. Seed: appc / vdss. */
+.bar-status {
+  display: flex; align-items: center; gap: var(--statusbar-gap);
+  padding: 6px 16px;
+  background: var(--bar-bgd);
+  border-top: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: 12px;
+  flex-shrink: 0;
+  position: sticky; bottom: 0; z-index: 10;
+}
+.bar-status .ok   { color: var(--ok); }
+.bar-status .warn { color: var(--warn); }
+.bar-status .err  { color: var(--danger); }
+
+/* ─── Bar furniture — welds, separator, standalone glyph, search-fill ────────
+   ⚠ CLAUDE: a lone .btn.icon is CORRECT — NEVER wrap ONE button in a weld (dead structure). Welds
+   exist ONLY to join 2+ buttons into a segmented pill. The WELD draws ONE continuous frame; its
+   children DROP their own border and fill it, separated by a single 1px divider. Do NOT stitch a
+   pill from each button's border (abutting borders seam/double on fractional-DPI). */
+.barh-sep { width: 1px; height: 20px; background: var(--border); margin: 0 4px; flex-shrink: 0; }
+.barh-grp, .barv-grp {
+  display: flex; flex-shrink: 0;
+  box-sizing: border-box;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  overflow: hidden;
+}
+/* Orientation is the ONLY difference: horizontal weld = a row of the control height; vertical =
+   a stacked column of the control width. Same atom (.btn.icon) inside either. */
+.barh-grp { flex-direction: row;    height: 30px; }
+.barv-grp { flex-direction: column; width:  30px; }
+.barh-grp > *, .barv-grp > * { border: none; border-radius: 0; }
+.barh-grp > * { height: 100%; }   /* children fill the bar's cross-axis */
+.barv-grp > * { width:  100%; }
+.barh-grp > * + * { border-left: 1px solid var(--border-strong); }   /* single divider between cells */
+.barv-grp > * + * { border-top:  1px solid var(--border-strong); }
+/* (No .btn.icon padding override needed — .btn.icon is padding:0 by default, so a welded icon fills the cell cleanly.) */
+
+/* ⚠ CLAUDE: there is NO separate "segmented switch" widget. A view-mode / on-off toggle is just
+   .btn.icon + .active inside a .barh-grp — identical to every other icon button. Do NOT reintroduce
+   a .tb-seg with its own height/shape. (An earlier .tb-seg was removed 2026-07-01 for exactly this.) */
+
+/* A standalone (non-button) status icon sitting in a bar (volume, …) — geometry only; colour per-instance. */
+.bar-glyph { width: 14px; height: 14px; flex-shrink: 0; }
+
+/* Search that stretches to fill a bar — the horizontal-fill variant of .search (its max-width is a
+   sanctioned per-instance inline cap, differs per bar). */
+.barh-search { flex: 1 1 auto; min-width: 120px; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   5. DIALOGS & MODALS  — modal frame, popup, form controls, tabs, opt-buttons
+   ═══════════════════════════════════════════════════════════════════════════
+   Every app has dialogs, so this is app chrome like the rest — ONE file, no separate stylesheet.
+   The .dlg surface uses the --dlg-* tokens (+ --shadow). A NON-MODAL in-page form marks its region
+   .dlg-form to give its .numfield / .select / .btn the dialog context WITHOUT the modal frame (a bare
+   context marker, no box of its own — e.g. amsd's seed panel). Field SHAPE comes from the field base
+   in §2.2 (LAW ZERO); the rules here add only the dialog fill / frame / layout. */
+
+/* ── Overlay + box ─────────────────────────────────────────────────────────── */
+.dl-backdrop {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,.45);
+  backdrop-filter: blur(5px);
+  display: flex; align-items: center; justify-content: center;
+  padding: 16px;
+  z-index: 1000;
+}
+.dlg {
+  background: var(--dlg-bgd);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  width: 100%; max-width: 480px; max-height: 90vh;
+  display: flex; flex-direction: column;
+  overflow: hidden;
+}
+/* Open animation — every dialog fades + grows in (GUI Standard v1 DLG-7), automatically, because it
+   rides on .dlg / .dlp. Apps must NOT author their own @keyframes fadeIn / .modal-box. Unique keyframe
+   name so it never collides with an app-local `fadeIn` (e.g. a toast). */
+@keyframes dlgFadeIn { from { opacity: 0; transform: scale(0.97); } to { opacity: 1; transform: scale(1); } }
+.dlg, .dlp { animation: dlgFadeIn 0.18s ease; }
+
+/* ── Header (title left, X right, no bottom border) ────────────────────────── */
+.dlg-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 20px 24px 16px;
+  flex-shrink: 0;
+}
+.dlg-title { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; font-size: 18px; color: var(--text); }
+.dlg-title svg { width: 18px; height: 18px; }   /* title icon sized by the control, not a size= prop */
+.dlg-subtitle { font-weight: 400; font-size: 13px; color: var(--text-mute); }
+/* Close X — ONE control (.dl-close) for both the dialog header X and the popup corner X. Placement is
+   the CONTAINER's job: a header flexes it top-right; a popup (no header) positions it absolutely (see
+   `.dlp .dl-close` below). Recolour/position, never re-shape. */
+.dl-close {
+  background: transparent; border: none; cursor: pointer;
+  color: var(--text-dim);
+  padding: 4px;
+  display: flex; align-items: center;
+  border-radius: 6px;
+}
+.dl-close:hover { color: var(--text); background: var(--s-hov); }
+.dl-close svg { width: 18px; height: 18px; }   /* icon sized by the control, not a size= prop */
+/* A standalone .btn (Save/Cancel …) in a dialog needs no context rule: .btn:hover reads --s-hov,
+   and .dlg / .dlg-form bind --s-hov = --dlg-hov (see the surface→role bindings, §1). */
+
+/* ── Body + footer ─────────────────────────────────────────────────────────── */
+.dlg-body { padding: 20px 24px 24px; overflow-y: auto; }
+/* Footer — action row pinned under the body (Save / Cancel …). Buttons use the shared .btn family.
+   The ONE footer control: never hand-roll a footer row inline. */
+.dlg-foot {
+  display: flex; align-items: center; justify-content: flex-end; gap: 8px;
+  padding: 16px 24px; border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+/* ── Popup — the ONE small centered modal (GUI Standard Rule DLG-6) ──────────────
+   Centered icon + title + body + centered buttons. A "confirm" is this with Cancel/Yes in the foot; a
+   picker (translate, move, tag…) is this with a field in the body — SAME shape. Never hand-roll it.
+   Buttons use the shared .btn family; the icon colour + each action button's `--accent` stay per-instance
+   (semantic: red delete, amber unlink, accent action — a per-use override, never a new shape). */
+.dlp {
+  position: relative;
+  background: var(--dlg-bgd);
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  padding: 32px;
+  width: 100%; max-width: 340px;
+  text-align: center;
+}
+/* Corner close — a popup has no header bar, so the shared .dl-close is positioned absolutely BY THE
+   popup container. Dismiss via X, a Cancel button, or backdrop. */
+.dlp .dl-close { position: absolute; top: 12px; right: 12px; }   /* the popup places the shared close-X; shape/hover from the base above */
+.dlp-icon  { display: block; margin: 0 auto 12px; width: 40px; height: 40px; }   /* dialog hero icon sized by the control, not a size= prop */
+.dlp-title { margin: 0 0 8px; font-size: 17px; font-weight: 700; color: var(--text); }
+.dlp-sub   { margin: 0 0 24px; font-size: 13px; line-height: 1.5; color: var(--text-mute); }
+.dlp-body  { display: flex; flex-direction: column; gap: 8px; margin-bottom: 24px; text-align: left; }
+.dlp-foot  { display: flex; gap: 8px; justify-content: center; }
+.dlg-field { display: flex; flex-direction: column; gap: 6px; }
+.dlg-field.divider { border-top: 1px solid var(--border); padding-top: 16px; margin-top: 16px; }
+.dlg-field-label {
+  font-size: 11px; letter-spacing: 1px; text-transform: uppercase;
+  font-weight: 600; color: var(--accent);
+}
+/* Confirm-dialog Cancel button — takes INITIAL focus (safe default), so it carries a visible focus ring.
+   Put `.dlg-confirm-cancel-default` alongside `.btn.subtle` on a confirm's Cancel (see Modal Focus
+   Management). Seed: ampl. */
+.dlg-confirm-cancel-default:focus { outline: none; border-color: var(--text) !important; color: var(--text) !important; box-shadow: 0 0 0 2px color-mix(in srgb, var(--text) 27%, transparent); }
+
+/* ── About tab ─────────────────────────────────────────────────────────────── */
+.dlg-about         { display: flex; gap: 24px; align-items: flex-start; }
+.dlg-about-logo    { width: 120px; height: auto; flex-shrink: 0; }
+.dlg-about-text    { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.dlg-about-id      { color: var(--text); font-size: 14px; }
+.dlg-about-desc    { color: var(--text); font-size: 14px; line-height: 1.7; }
+.dlg-about-version { color: var(--text-dim); font-size: 11px; margin-top: 4px; }
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   6. PANEL  — list/nav SIDE region (a TOC, a filter/nav sidebar, a session list)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* The app's secondary surface, distinct from the bars and the main content. ONE shell so every
+   app's side list reads the same — the app owns width + internal layout, .pnl owns the surface.
+   NOT a bar. Seed: markzen TOC / icoc filter / clch sessions / ampl projects. */
+.pnl { background: var(--pnl-bgd); }
+
+/* Collapsible-panel toggle (shared control — lib/ui-ctl-collapsetoggle.jsx). The button welded to a
+   side panel's open edge (accent when open, neutral when hidden). `side` picks which edge is
+   seamless: a LEFT panel's toggle drops its left border + rounds right; a RIGHT panel is the mirror. */
+.pnl-toggle-wrap { display: flex; align-items: flex-start; padding-top: 16px; flex-shrink: 0; }
+.pnl-toggle {
+  display: flex; align-items: center;
+  padding: 10px 4px; cursor: pointer;
+  background: var(--pnl-bgd);
+  border: 1px solid var(--border);
+  color: var(--text-mute);
+  transition: all 0.2s;
+}
+.pnl-toggle > svg { width: 14px; height: 14px; }   /* toggle icon sized by the control, not a size= prop */
+.pnl-toggle.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.pnl-toggle-left  { border-left: none;  border-radius: 0 6px 6px 0; }
+.pnl-toggle-right { border-right: none; border-radius: 6px 0 0 6px; }
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   7. SETTINGS VIEW  — the full-window settings page (lib/ui-settings.jsx)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Settings is a VIEW, not a dialog: it takes everything below the header — it covers the app's
+   content region (.app-main, the one position:relative region) and the footer bars are hidden
+   while it is open — and the app underneath stays mounted. Built only from existing parts: the rail is a .pnl side region holding the
+   catalog .tabs.vertical, the page is a .dlg-form (dialog field context without the modal
+   frame) on the dialog surface, so every settings field looks exactly as it did in the dialog.
+   z-index: above the app's own content, BELOW .dl-backdrop / .pop-surface (1000) and .toast
+   (1200) - a confirm or popover opened from a settings tab must still land on top. Every app
+   mounts it through the shared component - never hand-build the markup. */
+.stg-view { position: absolute; inset: 0; z-index: 500; display: flex; background: var(--dlg-bgd); }
+/* While the page is open (<html>.stg-open, set by the component) the footer bars are hidden, so the
+   page takes everything below the header. display:none, never unmounted — a footer may own the
+   playing <audio> (lrce, ampl). A flow footer's space goes to .app-main (flex:1), so the page reaches
+   the window bottom; a portaled one (ampl's player) is simply no longer drawn over it. On <html>
+   rather than .app-root precisely because of that portal. */
+.stg-open .barh-footer, .stg-open .bar-status { display: none; }
+/* …and the header goes INERT, as it was under the dialog's backdrop: its controls act on the view the
+   page is covering, so none of them may fire while it is open. The one exception is the app's own
+   settings button, marked .stg-toggle, which closes the page. Dimmed exactly as .btn:disabled, so it
+   reads as "not now" rather than broken. */
+.stg-open :is(.barh-header, .barh-subbar) :is(button, input, select, textarea, a, [role="button"]):not(.stg-toggle) {
+  pointer-events: none; opacity: .4;
+}
+.stg-rail {
+  display: flex; flex-direction: column; flex-shrink: 0; min-width: 200px;
+  border-right: 1px solid var(--border);
+}
+/* The rail draws the full-height edge; the strip's own edge is switched off and the active mark
+   keeps its 1px overlap, so it paints over the rail's border (tokens only, no new shape). */
+.stg-rail > .tabs.vertical { --tabs-edge-r: 0; }
+.stg-head { display: flex; align-items: center; gap: 4px; padding: 16px 12px 12px 8px; }
+.stg-body { flex: 1; min-width: 0; overflow-y: auto; padding: 24px 32px; }
+/* The page is full-window, the CONTROLS are not: a select or a two-button theme row stretched across
+   1600px reads as broken, not as spacious. One readable column, left-aligned under the rail. */
+.stg-page { max-width: 600px; }
+/* Option rows on the page (Theme) keep their label width instead of splitting the column — the
+   catalog token, as ai-music-seed's articulation pills use it. */
+.stg-page .opt-btns { --opt-btn-flex: 0 0 auto; }
+/* Same for a select: undo the dialog form's width:100% so the native control sizes to its longest
+   option (Language: the widest of the 50 language names), as a select does by default. */
+.stg-page .select { width: auto; align-self: flex-start; }   /* align-self: a .dlg-field is a flex column, which stretches its children whatever their width says */
+
+/* ── PENDING / not yet catalogued ─────────────────────────────────────────────
+   Flat toolbar (.barf) — a dense row of BORDERLESS icon buttons (an editor / formatting toolbar).
+   The third arrangement beside the welded pills: NO frame; the .btn.icon children drop their border
+   and show only a hover fill (keeping the 8px radius, so hover is a rounded chip). Sits on a body
+   surface, so the hover is --bg-hov. Buttons shrink-to-fit a resizable pane. Seed: markzen editor. */
+.barf { display: flex; align-items: center; gap: 6px; }
+.barf .btn.icon { border: none; padding: 0; width: 30px; flex-shrink: 1; }
+.barf .btn.icon:hover:not(:disabled) { background: var(--s-hov); color: var(--text); }
+
+/* ─── Non-control icon contexts ────────────────────────────────────────────────
+   Icons that aren't a toolbar control still get sized by their context here, so a
+   consumer NEVER passes an inline size= (which drifts). Three shapes:            */
+
+/* Loading spinner — animation + a default size. Inside a .btn the icon rule wins
+   (14px); inside .empty it keeps this size (the hero rule below excludes it). */
+@keyframes spin { to { transform: rotate(360deg); } }
+.spinner { width: 40px; height: 40px; animation: spin 1s linear infinite; }   /* matches the empty-state hero glyph; colour inherits context; a .btn shrinks it to 14 (.btn > svg) */
+
+/* Empty-state block — centered hero glyph + optional title/subtitle. Promotes the
+   old inline `s.empty` object; the container sizes its hero svg (spinner excepted). */
+.empty { grid-column: 1 / -1; display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; padding: 80px 20px; color: var(--text-mute); }
+.empty > svg:not(.spinner) { width: 40px; height: 40px; }
+.empty-title { margin: 0; font-size: 17px; font-weight: 600; color: var(--text-mute); }
+.empty-sub   { margin: 0; font-size: 13px; color: var(--text-mute); }
+
+/* Icon flowing inside a line of text (a status marker, a badge glyph) — matches
+   the surrounding text size automatically, so no magic-number size= per spot. */
+.icon-inline { width: 1em; height: 1em; flex-shrink: 0; }

@@ -1,0 +1,55 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+/* App-specific, non-token styles only. The palette and every shared class come from the catalog
+   CSS files that load before this one. */
+
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  font-family: 'Inter', system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
+
+.workspace { padding: 16px 20px; }
+.workspace-empty { color: var(--text-mute); margin: 16px 0; }
+
+/* ─── Converter: the list, the bottom bar, the two editors ─────────────────────────────────────
+   Layout only. Every colour is a token and every control is the catalog's own class. */
+.converter-note { padding: 12px 16px; margin: 0; }
+.converter-list { padding: 8px 12px; }
+.converter-row { cursor: default; }
+.barh-footer .select, .barh-header .select { width: auto; max-width: 220px; }
+.converter-state-ok  { color: var(--ok); }
+.converter-state-err { color: var(--danger); }
+.converter-state-run { color: var(--accent); }
+
+.manager { display: flex; gap: 24px; align-items: flex-start; height: 100%; min-height: 0; }
+/* Entries are reordered by dragging: the whole row is the handle, the held one dims. */
+.manager-list .lv-item { cursor: grab; user-select: none; }
+.manager-list .lv-item.reordering { opacity: 0.55; cursor: grabbing; }
+.manager-list { width: 260px; flex-shrink: 0; display: flex; flex-direction: column; gap: 10px; height: 100%; min-height: 0; }
+.manager-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.manager-form { flex: 1; min-width: 0; max-width: 560px; display: flex; flex-direction: column; gap: 18px; }
+.manager-row { display: flex; gap: 8px; align-items: center; }
+.manager-tokens { display: flex; flex-wrap: wrap; gap: 6px; }
+.manager-example { font-family: 'JetBrains Mono', monospace; font-size: 12.5px; color: var(--text-dim); word-break: break-all; }
+
+/* A Settings tab the app supplies (the two editors) is a wide two-pane page, not a 600px column. */
+.stg-page.stg-page-app { max-width: none; height: 100%; }
+
+/* The cover thumbnail of a list row; the same square whether or not the file has a picture. */
+.converter-cover-box { width: 40px; height: 40px; justify-content: center; color: var(--text-mute); background: var(--bg-row); border-radius: 6px; overflow: hidden; }
+.converter-cover { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+/* The advanced section of a preset: the same rhythm as the form around it. The controls sit in their
+   own column - display:flex on a <details> does not reach its children (they live in an internal
+   slot), so the gap is carried by this wrapper. */
+.manager-advanced > summary { cursor: pointer; }
+.manager-advanced-body { display: flex; flex-direction: column; gap: 18px; margin-top: 18px; }
+
+.converter-status { font-size: 12px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+
+.manager-suggest { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }

@@ -1,0 +1,10 @@
+[workspace]
+resolver = "2"
+members = ["engine", "app"]
+
+# Dependencies are compiled optimised even in a debug build. The image decoder and the tag library are
+# an order of magnitude slower unoptimised: with them at opt-level 0 the file list's cover thumbnails
+# (read in-process) took longer than the ffmpeg process they replaced. The app's own crates stay at
+# debug level, so an incremental rebuild is as quick as before; only the first build is longer.
+[profile.dev.package."*"]
+opt-level = 3

@@ -1,0 +1,5 @@
+target/
+release/
+.claude/
+# the bundled conversion engine is fetched at build time, never committed
+app/resources/

@@ -1,0 +1,72 @@
+/* ui-ctl-knob.css — the Knob control (lib/ui-ctl-knob.jsx)
+   ═══════════════════════════════════════════════════════════════════════════
+   An OPTIONAL control's skin, so it is its own file: the sync copies a catalog
+   CSS into an app only when that app uses it, and `ui-app.css` — which every
+   app holds unconditionally — is for what every app has by being a yaiol app.
+   It rides with the component: the sync keys usage by STEM, so
+   `ui-ctl-knob.css` travels wherever `ui-ctl-knob.jsx` does, and the jsx
+   side-effect-imports it so the copy is actually loaded.
+
+   ⚠ Do not edit an app's copy — this file is distributed by sync-shared.js;
+   edit the canonical source and re-sync.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Knob — the ONE compact instrument-style value control (ui-ctl-knob.jsx):
+   label on top, round drag body (up = increase), editable value underneath.
+   Colour flows from the container's surface tokens; the tick's ROTATION is the
+   value and arrives as an inline transform from the component (state, not
+   geometry). */
+.knob { display: flex; flex-direction: column; align-items: center; gap: 3px; width: 56px; flex-shrink: 0; }
+/* Deliberately NOT the standard field-label look: lowercase, plain text
+   colour, bold — a knob's caption reads like an instrument marking, not a
+   form label. */
+.knob-label {
+  font-size: 11px; font-weight: 700; color: var(--text);
+  text-transform: lowercase; white-space: nowrap;
+}
+.knob-body {
+  width: 30px; height: 30px; border-radius: 50%;   /* the CONTROL height — same as .btn/.btn.icon */
+  border: 1px solid var(--border); background-color: var(--s-inp, transparent);
+  cursor: ns-resize; position: relative; padding: 0; outline: none;
+  touch-action: none;                     /* the drag IS the gesture — never scroll */
+}
+.knob-body:hover { border-color: var(--text-dim); }
+.knob-body:focus-visible { border-color: var(--accent); }
+.knob-tick {
+  position: absolute; left: 50%; top: 3px;
+  width: 2px; height: 8px; margin-left: -1px; border-radius: 1px;
+  background: var(--accent);
+  transform-origin: 1px 12px;             /* the body's centre, so the tick orbits it */
+}
+/* the swept arc (`arc` prop): a ring just inside the body's border, tracing
+   min → value. Only for a knob whose value is an AMOUNT from its minimum — on
+   a centre-zero knob (tuning, octave) it would state a fraction that means
+   nothing. It sits UNDER the tick, which stays the read-out of record. */
+.knob-arc { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+/* The ring shares the tick's OUTER edge (r + stroke/2 = 12 in the 30px body,
+   the tick's own tip), so an arc knob and a tick knob mark the same radius.
+   The tick is NOT drawn alongside it — the arc already ends at the value, and
+   the two edges never land on the same pixel, so the tick read as an
+   overshoot past the fill. Change the radius and the stroke together or the
+   outer edge drifts off the radius the tick knobs use. */
+.knob-arc circle { fill: none; stroke: var(--accent); stroke-width: 6; }
+.knob-value {
+  width: var(--knob-value-w, 100%); border: none; background: transparent; color: var(--text);   /* the inline tier narrows it via the token */
+  font-size: 11px; text-align: center; outline: none; padding: 0; font-family: inherit;
+}
+.knob-value:focus { color: var(--accent); }
+.knob.disabled { opacity: .45; }
+.knob.disabled .knob-body { cursor: default; }
+/* Inline tier — the SAME knob laid out across: the body at the left, label over value stacked
+   beside it, so the control is ONE control height (30px) tall instead of three lines. For a band
+   whose height is a fixed row multiple (ai-music-seed's lane band, 2u). Body, tick, drag travel
+   and fonts are unchanged — only the axis. Same DOM order (label · body · value): the grid areas
+   do the placing, the component knows nothing about it. */
+.knob.inline {
+  display: grid; grid-template-columns: 30px auto; grid-template-areas: "body label" "body value";
+  column-gap: 5px; row-gap: 0; align-items: center; width: auto; flex: 0 0 auto;
+  --knob-value-w: 38px;   /* fits "100 %"; an <input>'s intrinsic width is ~150px and the base's 100% would swallow the band */
+}
+.knob.inline .knob-label { grid-area: label; align-self: end; line-height: 13px; }
+.knob.inline .knob-body { grid-area: body; }
+.knob.inline .knob-value { grid-area: value; align-self: start; text-align: left; line-height: 13px; }

@@ -1,0 +1,30 @@
+[application]
+name = "Audio Converter"
+# The installer is generated straight into main/release (relative to this crate), not left nine
+# folders deep under target/.
+out_dir = "../release"
+
+[bundle]
+identifier = "com.yaiol.audio-converter.app"
+publisher = "yaiol"
+icon = ["assets/app.png", "assets/app.ico"]
+short_description = "Audio converter"
+# The conversion engine: scripts/fetch-ffmpeg.sh puts an LGPL ffmpeg here in CI. dx skips a listed
+# resource that is not there (with a warning), so a developer build simply uses the ffmpeg on PATH.
+resources = ["resources/ffmpeg.exe", "resources/ffmpeg"]
+
+# Skip: the installer does not touch WebView2. dx's script runs Microsoft's bootstrapper on EVERY
+# install, with no check for an installed runtime - about a minute, for nothing, on a machine that
+# has it (every Windows 11). Revisit before a Rust app is distributed: a Windows 10 machine without
+# the runtime would then start the app to nothing.
+[bundle.windows]
+webview_install_mode = "Skip"
+
+# `template` is our installer script (display name "yaiol <name>", an icon in Settings > Apps, the
+# shared Start Menu folder left alone on uninstall) - see installer.nsi. `installer_icon` is also the
+# icon that script copies next to the executable for the uninstall entry.
+[bundle.windows.nsis]
+install_mode = "Both"
+start_menu_folder = "yaiol"
+installer_icon = "assets/app.ico"
+template = "installer.nsi"

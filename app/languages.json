@@ -1,0 +1,210 @@
+[
+  {
+    "key": "ar",
+    "label": "العربية"
+  },
+  {
+    "key": "bn",
+    "label": "বাংলা"
+  },
+  {
+    "key": "bg",
+    "label": "Български"
+  },
+  {
+    "key": "ca",
+    "label": "Català"
+  },
+  {
+    "key": "zh_CN",
+    "label": "简体中文"
+  },
+  {
+    "key": "zh_TW",
+    "label": "繁體中文"
+  },
+  {
+    "key": "cs",
+    "label": "Čeština"
+  },
+  {
+    "key": "da",
+    "label": "Dansk"
+  },
+  {
+    "key": "de",
+    "label": "Deutsch"
+  },
+  {
+    "key": "en",
+    "label": "English"
+  },
+  {
+    "key": "es",
+    "label": "Español"
+  },
+  {
+    "key": "fa",
+    "label": "فارسی"
+  },
+  {
+    "key": "fi",
+    "label": "Suomi"
+  },
+  {
+    "key": "fr",
+    "label": "Français"
+  },
+  {
+    "key": "gl",
+    "label": "Galego"
+  },
+  {
+    "key": "el",
+    "label": "Ελληνικά"
+  },
+  {
+    "key": "ha",
+    "label": "Hausa"
+  },
+  {
+    "key": "he",
+    "label": "עברית"
+  },
+  {
+    "key": "hi",
+    "label": "हिन्दी"
+  },
+  {
+    "key": "hr",
+    "label": "Hrvatski"
+  },
+  {
+    "key": "hu",
+    "label": "Magyar"
+  },
+  {
+    "key": "hy",
+    "label": "Հայերեն"
+  },
+  {
+    "key": "id",
+    "label": "Indonesia"
+  },
+  {
+    "key": "it",
+    "label": "Italiano"
+  },
+  {
+    "key": "ja",
+    "label": "日本語"
+  },
+  {
+    "key": "ko",
+    "label": "한국어"
+  },
+  {
+    "key": "lt",
+    "label": "Lietuvių"
+  },
+  {
+    "key": "mk",
+    "label": "Македонски"
+  },
+  {
+    "key": "mr",
+    "label": "मराठी"
+  },
+  {
+    "key": "ms",
+    "label": "Melayu"
+  },
+  {
+    "key": "nl",
+    "label": "Nederlands"
+  },
+  {
+    "key": "nb",
+    "label": "Norsk"
+  },
+  {
+    "key": "pa",
+    "label": "ਪੰਜਾਬੀ"
+  },
+  {
+    "key": "pl",
+    "label": "Polski"
+  },
+  {
+    "key": "pt_BR",
+    "label": "Português (Brasil)"
+  },
+  {
+    "key": "pt_PT",
+    "label": "Português (Portugal)"
+  },
+  {
+    "key": "ro",
+    "label": "Română"
+  },
+  {
+    "key": "ru",
+    "label": "Русский"
+  },
+  {
+    "key": "sk",
+    "label": "Slovenčina"
+  },
+  {
+    "key": "sl",
+    "label": "Slovenščina"
+  },
+  {
+    "key": "sr",
+    "label": "Српски"
+  },
+  {
+    "key": "sv",
+    "label": "Svenska"
+  },
+  {
+    "key": "sw",
+    "label": "Kiswahili"
+  },
+  {
+    "key": "ta",
+    "label": "தமிழ்"
+  },
+  {
+    "key": "te",
+    "label": "తెలుగు"
+  },
+  {
+    "key": "th",
+    "label": "ไทย"
+  },
+  {
+    "key": "tl",
+    "label": "Filipino"
+  },
+  {
+    "key": "tr",
+    "label": "Türkçe"
+  },
+  {
+    "key": "uk",
+    "label": "Українська"
+  },
+  {
+    "key": "ur",
+    "label": "اردو"
+  },
+  {
+    "key": "vi",
+    "label": "Tiếng Việt"
+  },
+  {
+    "key": "yo",
+    "label": "Yorùbá"
+  }
+]
