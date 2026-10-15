@@ -1,10 +1,12 @@
 ; The installer script `dx bundle` renders (Dioxus.toml → [bundle.windows.nsis] template).
 ;
-; It is dx's built-in script with three changes, and nothing else:
+; It is dx's built-in script with four changes, and nothing else:
 ;   - the name shown in Settings > Apps is "yaiol <name>" (like the electron installers), where dx
 ;     would show its PascalCased executable name ("AudioConverter");
 ;   - the uninstall entry carries an icon (DisplayIcon) - dx writes none, so Settings showed a blank;
-;   - the Start Menu / Desktop shortcuts are named with the real display name, spaces included.
+;   - the Start Menu / Desktop shortcuts are named with the real display name, spaces included;
+;   - the last page offers (UNTICKED) to put the install folder on the user's PATH, so the command line
+;     `yac` that sits beside the window runs from any terminal. Silent installs never add it.
 ;
 ; ⚠ CLAUDE: the display name is the one literal below. It is identity, so it is written from the
 ; birth certificate by the cockpit's app-info (and by the scaffolder) - never edit it by hand.
@@ -65,6 +67,13 @@ VIAddVersionKey "LegalCopyright" "{{copyright}}"
 {{/if}}
 !insertmacro MUI_PAGE_DIRECTORY
 !insertmacro MUI_PAGE_INSTFILES
+; The finish page's one checkbox is the PATH option (the "show readme" slot, repurposed): unticked by
+; default, because changing someone's PATH is not something an installer does unasked. The command
+; takes effect in terminals opened afterwards.
+!define MUI_FINISHPAGE_SHOWREADME ""
+!define MUI_FINISHPAGE_SHOWREADME_TEXT "Add the yac command line to the PATH"
+!define MUI_FINISHPAGE_SHOWREADME_NOTCHECKED
+!define MUI_FINISHPAGE_SHOWREADME_FUNCTION AddToUserPath
 !insertmacro MUI_PAGE_FINISH
 
 ; Uninstaller pages
@@ -76,6 +85,17 @@ VIAddVersionKey "LegalCopyright" "{{copyright}}"
 {{#each additional_languages}}
 !insertmacro MUI_LANGUAGE "{{this}}"
 {{/each}}
+
+; The user's own PATH (never the machine's): one entry, added once, removed on uninstall.
+; PowerShell does the edit because NSIS has no string functions worth the lines, and setting the
+; variable through .NET also tells running programs the environment changed.
+Function AddToUserPath
+    nsExec::Exec 'powershell -NoProfile -ExecutionPolicy Bypass -Command "$$p=[Environment]::GetEnvironmentVariable(\"Path\",\"User\"); if(-not $$p){$$p=\"\"}; if((($$p -split \";\") -notcontains \"$INSTDIR\")){[Environment]::SetEnvironmentVariable(\"Path\",(($$p.TrimEnd(\";\")+\";$INSTDIR\").TrimStart(\";\")),\"User\")}"'
+FunctionEnd
+
+Function un.RemoveFromUserPath
+    nsExec::Exec 'powershell -NoProfile -ExecutionPolicy Bypass -Command "$$p=[Environment]::GetEnvironmentVariable(\"Path\",\"User\"); if($$p){[Environment]::SetEnvironmentVariable(\"Path\",((($$p -split \";\") | Where-Object { $$_ -ne \"$INSTDIR\" -and $$_ -ne \"\" }) -join \";\"),\"User\")}"'
+FunctionEnd
 
 ; Installer section
 Section "Install"
@@ -145,6 +165,9 @@ SectionEnd
 
 ; Uninstaller section
 Section "Uninstall"
+    ; Take the install folder off the user's PATH (a no-op when it was never added)
+    Call un.RemoveFromUserPath
+
     ; Remove files
     RMDir /r "$INSTDIR"
 

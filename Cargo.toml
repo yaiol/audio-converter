@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["engine", "app"]
+members = ["engine", "app", "cli"]
 
 # Dependencies are compiled optimised even in a debug build. The image decoder and the tag library are
 # an order of magnitude slower unoptimised: with them at opt-level 0 the file list's cover thumbnails

@@ -1,0 +1,19 @@
+[package]
+name = "audio-converter-cli"
+version = "1.0.0"
+edition = "2024"
+description = "Audio Converter on the command line"
+license = "MIT"
+
+# The command is `yac` (yaiol audio converter). Its product name and version are the APP's (build.rs reads ../app/Cargo.toml):
+# one identity, so the two programs can never report different versions.
+[[bin]]
+name = "yac"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4.5", features = ["derive"] }
+engine = { package = "audio-converter-engine", path = "../engine" }
+
+[build-dependencies]
+toml = "1.1.8"

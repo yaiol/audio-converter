@@ -7,7 +7,7 @@
 //! key at the call site.
 
 use crate::{
-    catalog::{Knob, NumberInput},
+    catalog::{Equalizer as EqualizerControl, NumberInput},
     i18n,
     settings::Settings,
 };
@@ -19,7 +19,7 @@ use dioxus_free_icons::{
 use engine::{
     CleanupMode, Destination, FlacStereo, Format, Id3Version, OpusApplication, OpusBandwidth, OpusVbr, Preset, QualityKind,
     RateControl, TagCleanup,
-    effects::{Channels, ChannelsMode, CutRange, DeEsser, Denoise, Dynamics, DynamicsMode, EQ_BANDS_HZ, Effect, EffectsEntry, Equalizer, Fade, Kind, LimitDuration, LowCut, Repair, ReplayGainTags, SilenceEnd, Tempo, Tone, TrimSilence, Volume, VolumeMode},
+    effects::{Channels, ChannelsMode, CutRange, DeEsser, Denoise, Dynamics, DynamicsMode, EQ_BANDS_HZ, Effect, EffectsEntry, Equalizer, Fade, Group, Kind, LimitDuration, LowCut, Repair, ReplayGainTags, SilenceEnd, Tempo, Tone, TrimSilence, Volume, VolumeMode},
     options::{FLAC_BLOCK_SIZES, OPUS_FRAME_TENTHS},
     destination::{self, SOURCE_ID, TOKENS},
 };
@@ -71,6 +71,12 @@ fn edit_effects(mut settings: Signal<Settings>, id: &str, edit: impl FnOnce(&mut
     }
 }
 
+/// A band's caption on the equaliser: the frequency, with the thousands as k (the unit is the control's
+/// own `label_unit`, shown in the tooltip).
+fn band_caption(hz: u32) -> String {
+    if hz >= 1000 && hz % 1000 == 0 { format!("{}k", hz / 1000) } else { hz.to_string() }
+}
+
 /// The value of an option in the add menu, and its label.
 fn kind_value(k: Kind) -> &'static str {
     match k {
@@ -92,6 +98,32 @@ fn kind_value(k: Kind) -> &'static str {
         Kind::SilenceEnd => "silence_end",
         Kind::ReplayGain => "replay_gain",
     }
+}
+
+fn group_value(g: Group) -> &'static str {
+    match g {
+        Group::Time => "time",
+        Group::Level => "level",
+        Group::Sound => "sound",
+    }
+}
+
+fn group_label(g: Group, lang: &str) -> String {
+    match g {
+        Group::Time => i18n::t(lang, "lblFxGroupTime"),
+        Group::Level => i18n::t(lang, "lblFxGroupLevel"),
+        Group::Sound => i18n::t(lang, "lblFxGroupSound"),
+    }
+}
+
+/// The kinds of one group still to add, each with its label, alphabetical in the user's language
+/// (case ignored). The menu sorts by what the user READS, so it is sorted here, per language, and not
+/// by the kind's position - which is the run order and stays the page's order.
+fn group_kinds(addable: &[Kind], group: Group, lang: &str) -> Vec<(Kind, String)> {
+    let mut v: Vec<(Kind, String)> =
+        addable.iter().copied().filter(|k| k.group() == group).map(|k| (k, kind_label(k, lang))).collect();
+    v.sort_by_key(|(_, label)| label.to_lowercase());
+    v
 }
 
 fn kind_from_value(v: &str) -> Option<Kind> {
@@ -375,7 +407,7 @@ pub fn PresetEditor(settings: Signal<Settings>) -> Element {
     let s_ringtone = t("msgPrsRingtoneLimit");
     let s_id3 = t("lblPrsId3Version");
     let s_id3_hint = t("msgPrsId3Hint");
-    let knob_label = match current.quality_kind() {
+    let quality_label = match current.quality_kind() {
         QualityKind::Bitrate => t("lblPrsQualityBitrate"),
         QualityKind::VbrLevel => t("lblPrsQualityVbr"),
         QualityKind::Compression => t("lblPrsQualityCompression"),
@@ -385,7 +417,7 @@ pub fn PresetEditor(settings: Signal<Settings>) -> Element {
     let id_for_name = cur_id.clone();
     let id_for_format = cur_id.clone();
     let id_for_rate = cur_id.clone();
-    let id_for_knob = cur_id.clone();
+    let id_for_quality = cur_id.clone();
     let id_for_sr = cur_id.clone();
     let id_for_ch = cur_id.clone();
     let id_for_bd = cur_id.clone();
@@ -396,7 +428,7 @@ pub fn PresetEditor(settings: Signal<Settings>) -> Element {
 
     let sample_rates = current.sample_rates();
     let bit_depths = current.bit_depths();
-    let knob = current.knob_range();
+    let quality = current.quality_range();
 
     rsx! {
         div { class: "manager",
@@ -544,20 +576,24 @@ pub fn PresetEditor(settings: Signal<Settings>) -> Element {
                         }
                     }
                 }
-                if let Some(r) = knob {
-                    div { class: "dlg-field",
-                        Knob {
-                            // The key makes the control remount when its meaning changes (bitrate
-                            // to a quality level), so it never shows a value in the wrong scale.
-                            key: "{current.format.id()}-{current.quality_kind() as u8}",
-                            label: knob_label,
-                            value: current.quality_value(),
-                            min: r.min,
-                            max: r.max,
-                            step: r.step,
-                            unit: r.unit.to_owned(),
-                            on_change: move |v: f64| edit_preset(settings, &id_for_knob, |p| p.set_quality(v)),
-                        }
+                if let Some(r) = quality {
+                    // The standard number field, as wide as its largest value needs, with the unit as
+                    // plain text beside it. The key makes it remount when its meaning changes (a
+                    // bitrate to a quality level), so it never shows a value in the wrong scale.
+                    NumberField {
+                        key: "{current.format.id()}-{current.quality_kind() as u8}",
+                        label: quality_label,
+                        value: Some(current.quality_value().round() as u32),
+                        min: r.min as u32,
+                        max: r.max as u32,
+                        step: r.step as u32,
+                        auto: String::new(),
+                        unit: r.unit.to_owned(),
+                        on_change: move |v: Option<u32>| {
+                            if let Some(v) = v {
+                                edit_preset(settings, &id_for_quality, |p| p.set_quality(f64::from(v)));
+                            }
+                        },
                     }
                 }
                 div { class: "dlg-field",
@@ -909,20 +945,50 @@ pub fn DestinationEditor(settings: Signal<Settings>) -> Element {
 // Each control is one field of `EncoderOptions`; an empty field means "the encoder decides". Numbers
 // use the catalog's NumberField (themed steppers, clamped on blur) at a width that fits a few digits.
 
-/// A labelled catalog number field. The width is for four or five digits plus the steppers.
+/// The width of a number field, in px, from the characters its largest value takes: the digits (13 px
+/// monospace, about 8 px each) plus the field's padding and its stepper column. A field is as wide as
+/// what can be typed in it and no wider - a fade of at most 4 digits is not a full-row input.
+fn number_width(max: u32) -> u32 {
+    max.to_string().len() as u32 * 8 + 34
+}
+
+/// The same for the plain signed input (the catalog's number field is unsigned): the widest of its two
+/// ends, a minus sign counted, in the body font, plus its padding and the browser's own spin buttons.
+fn signed_width(min: i32, max: i32) -> u32 {
+    min.to_string().len().max(max.to_string().len()) as u32 * 9 + 46
+}
+
+/// A labelled catalog number field, as wide as its largest value needs.
 #[component]
-fn NumberField(label: String, value: Option<u32>, min: u32, max: u32, auto: String, on_change: EventHandler<Option<u32>>) -> Element {
+fn NumberField(
+    label: String,
+    value: Option<u32>,
+    min: u32,
+    max: u32,
+    #[props(default = 1)] step: u32,
+    auto: String,
+    /// The unit, in plain text at the right of the field - never part of the title.
+    #[props(default)]
+    unit: String,
+    on_change: EventHandler<Option<u32>>,
+) -> Element {
     rsx! {
         div { class: "dlg-field",
             label { class: "dlg-field-label", "{label}" }
-            NumberInput {
-                value,
-                min,
-                max,
-                width: 140,
-                placeholder: auto,
-                allow_empty: true,
-                on_change: move |v| on_change.call(v),
+            div { class: "manager-row",
+                NumberInput {
+                    value,
+                    min,
+                    max,
+                    step,
+                    width: number_width(max),
+                    placeholder: auto,
+                    allow_empty: true,
+                    on_change: move |v| on_change.call(v),
+                }
+                if !unit.is_empty() {
+                    span { "{unit}" }
+                }
             }
         }
     }
@@ -931,22 +997,37 @@ fn NumberField(label: String, value: Option<u32>, min: u32, max: u32, auto: Stri
 /// A whole number that may be negative (a gain, a change of tempo). The catalog's number field is
 /// unsigned, so this is the catalog's plain input: a gap the catalog does not fill yet.
 #[component]
-fn SignedField(label: String, value: i32, min: i32, max: i32, on_change: EventHandler<i32>) -> Element {
+fn SignedField(
+    label: String,
+    value: i32,
+    min: i32,
+    max: i32,
+    /// The unit, in plain text at the right of the field - never part of the title.
+    #[props(default)]
+    unit: String,
+    on_change: EventHandler<i32>,
+) -> Element {
     rsx! {
         div { class: "dlg-field",
             label { class: "dlg-field-label", "{label}" }
-            input {
-                class: "input",
-                r#type: "number",
-                value: "{value}",
-                min: "{min}",
-                max: "{max}",
-                step: "1",
-                oninput: move |e| {
-                    if let Ok(n) = e.value().trim().parse::<i32>() {
-                        on_change.call(n.clamp(min, max));
-                    }
-                },
+            div { class: "manager-row",
+                input {
+                    class: "input",
+                    style: "width: {signed_width(min, max)}px",
+                    r#type: "number",
+                    value: "{value}",
+                    min: "{min}",
+                    max: "{max}",
+                    step: "1",
+                    oninput: move |e| {
+                        if let Ok(n) = e.value().trim().parse::<i32>() {
+                            on_change.call(n.clamp(min, max));
+                        }
+                    },
+                }
+                if !unit.is_empty() {
+                    span { "{unit}" }
+                }
             }
         }
     }
@@ -1532,6 +1613,7 @@ fn EffectItem(settings: Signal<Settings>, id: String, lang: String, item: Effect
                 }
                 NumberField {
                     label: t("lblFxSilenceThreshold"),
+                    unit: t("lblUnitDbFs"),
                     value: Some((-tr.threshold_db).round() as u32),
                     min: 10,
                     max: 120,
@@ -1540,6 +1622,7 @@ fn EffectItem(settings: Signal<Settings>, id: String, lang: String, item: Effect
                 }
                 NumberField {
                     label: t("lblFxTrimMargin"),
+                    unit: t("lblUnitMs"),
                     value: Some(tr.margin_ms),
                     min: 0,
                     max: 5000,
@@ -1552,6 +1635,7 @@ fn EffectItem(settings: Signal<Settings>, id: String, lang: String, item: Effect
             EffectCard { label: t("lblFxCutRange"), hint: t("msgFxCutRangeHint"), remove, on_remove,
                 NumberField {
                     label: t("lblFxFrom"),
+                    unit: t("lblUnitSeconds"),
                     value: Some(c.from_s.round() as u32),
                     min: 0,
                     max: 86_400,
@@ -1560,6 +1644,7 @@ fn EffectItem(settings: Signal<Settings>, id: String, lang: String, item: Effect
                 }
                 NumberField {
                     label: t("lblFxTo"),
+                    unit: t("lblUnitSeconds"),
                     value: Some(c.to_s.round() as u32),
                     min: 0,
                     max: 86_400,
@@ -1629,7 +1714,8 @@ fn EffectItem(settings: Signal<Settings>, id: String, lang: String, item: Effect
         Effect::LowCut(l) => rsx! {
             EffectCard { label: t("lblFxLowCut"), hint: t("msgFxLowCutHint"), remove, on_remove,
                 NumberField {
-                    label: t("lblFxLowCutHz"),
+                    label: t("lblFxLowCutBelow"),
+                    unit: t("lblUnitHz"),
                     value: Some(l.hz),
                     min: 10,
                     max: 1000,
@@ -1641,7 +1727,8 @@ fn EffectItem(settings: Signal<Settings>, id: String, lang: String, item: Effect
         Effect::Denoise(d) => rsx! {
             EffectCard { label: t("lblFxDenoise"), hint: t("msgFxDenoiseHint"), remove, on_remove,
                 NumberField {
-                    label: t("lblFxDenoiseDb"),
+                    label: t("lblFxDenoiseReduction"),
+                    unit: t("lblUnitDb"),
                     value: Some(d.reduction_db),
                     min: 1,
                     max: 60,
@@ -1650,6 +1737,7 @@ fn EffectItem(settings: Signal<Settings>, id: String, lang: String, item: Effect
                 }
                 NumberField {
                     label: t("lblFxDenoiseFloor"),
+                    unit: t("lblUnitDbFs"),
                     value: Some((-d.floor_db).round() as u32),
                     min: 20,
                     max: 80,
@@ -1661,7 +1749,8 @@ fn EffectItem(settings: Signal<Settings>, id: String, lang: String, item: Effect
         Effect::DeEsser(d) => rsx! {
             EffectCard { label: t("lblFxDeEsser"), hint: t("msgFxDeEsserHint"), remove, on_remove,
                 NumberField {
-                    label: t("lblFxDeEsserPct"),
+                    label: t("lblFxDeEsserIntensity"),
+                    unit: t("lblUnitPercent"),
                     value: Some(d.intensity_pct),
                     min: 0,
                     max: 100,
@@ -1672,18 +1761,17 @@ fn EffectItem(settings: Signal<Settings>, id: String, lang: String, item: Effect
         },
         Effect::Equalizer(q) => rsx! {
             EffectCard { label: t("lblFxEqualizer"), hint: t("msgFxEqualizerHint"), remove, on_remove,
-                for (band, hz) in EQ_BANDS_HZ.iter().copied().enumerate() {
-                    SignedField {
-                        key: "{hz}",
-                        label: format!("{hz} Hz"),
-                        value: q.gains_db[band],
-                        min: -12,
-                        max: 12,
-                        on_change: {
-                            let id = id.clone();
-                            move |v: i32| edit_equalizer(settings, &id, |x| x.gains_db[band] = v)
-                        },
-                    }
+                EqualizerControl {
+                    labels: EQ_BANDS_HZ.iter().map(|hz| band_caption(*hz)).collect::<Vec<_>>(),
+                    values: q.gains_db.iter().map(|g| f64::from(*g)).collect::<Vec<_>>(),
+                    min: -12.0,
+                    max: 12.0,
+                    unit: t("lblUnitDb"),
+                    label_unit: t("lblUnitHz"),
+                    on_change: {
+                        let id = id.clone();
+                        move |(band, v): (usize, f64)| edit_equalizer(settings, &id, |x| x.gains_db[band] = v as i32)
+                    },
                 }
             }
         },
@@ -1691,6 +1779,7 @@ fn EffectItem(settings: Signal<Settings>, id: String, lang: String, item: Effect
             EffectCard { label: t("lblFxTone"), hint: t("msgFxToneHint"), remove, on_remove,
                 SignedField {
                     label: t("lblFxBass"),
+                    unit: t("lblUnitDb"),
                     value: tn.bass_db,
                     min: -12,
                     max: 12,
@@ -1698,6 +1787,7 @@ fn EffectItem(settings: Signal<Settings>, id: String, lang: String, item: Effect
                 }
                 SignedField {
                     label: t("lblFxTreble"),
+                    unit: t("lblUnitDb"),
                     value: tn.treble_db,
                     min: -12,
                     max: 12,
@@ -1725,6 +1815,7 @@ fn EffectItem(settings: Signal<Settings>, id: String, lang: String, item: Effect
                     if d.mode == DynamicsMode::Compressor {
                         NumberField {
                             label: t("lblFxDynThreshold"),
+                            unit: t("lblUnitDbFs"),
                             value: Some((-d.threshold_db).round() as u32),
                             min: 1,
                             max: 60,
@@ -1733,6 +1824,7 @@ fn EffectItem(settings: Signal<Settings>, id: String, lang: String, item: Effect
                         }
                         NumberField {
                             label: t("lblFxDynRatio"),
+                            unit: t("lblUnitRatio"),
                             value: Some(d.ratio),
                             min: 1,
                             max: 20,
@@ -1746,7 +1838,8 @@ fn EffectItem(settings: Signal<Settings>, id: String, lang: String, item: Effect
         Effect::Tempo(tp) => rsx! {
             EffectCard { label: t("lblFxTempo"), hint: t("msgFxTempoHint"), remove, on_remove,
                 SignedField {
-                    label: t("lblFxTempoPct"),
+                    label: t("lblFxTempoChange"),
+                    unit: t("lblUnitPercent"),
                     value: tp.percent,
                     min: -50,
                     max: 100,
@@ -1789,6 +1882,7 @@ fn EffectItem(settings: Signal<Settings>, id: String, lang: String, item: Effect
                     if v.mode == VolumeMode::Loudness {
                         NumberField {
                             label: t("lblFxTarget"),
+                            unit: t("lblUnitLufs"),
                             value: Some((-v.target_lufs).round() as u32),
                             min: 5,
                             max: 50,
@@ -1799,6 +1893,7 @@ fn EffectItem(settings: Signal<Settings>, id: String, lang: String, item: Effect
                     if v.mode == VolumeMode::Peak {
                         NumberField {
                             label: t("lblFxTargetPeak"),
+                            unit: t("lblUnitDbFs"),
                             value: Some((-v.target_peak_db).round() as u32),
                             min: 0,
                             max: 30,
@@ -1819,7 +1914,8 @@ fn EffectItem(settings: Signal<Settings>, id: String, lang: String, item: Effect
                             },
                         }
                         NumberField {
-                            label: t("lblFxGainDb"),
+                            label: t("lblFxGainAmount"),
+                            unit: t("lblUnitDb"),
                             value: Some(v.gain_db.abs().round() as u32),
                             min: 0,
                             max: 30,
@@ -1840,6 +1936,7 @@ fn EffectItem(settings: Signal<Settings>, id: String, lang: String, item: Effect
                     if v.mode != VolumeMode::Peak {
                         NumberField {
                             label: t("lblFxCeiling"),
+                            unit: t("lblUnitDbFs"),
                             value: Some((-v.ceiling_db).round() as u32),
                             min: 0,
                             max: 20,
@@ -1853,10 +1950,11 @@ fn EffectItem(settings: Signal<Settings>, id: String, lang: String, item: Effect
         Effect::FadeIn(fd) => rsx! {
             EffectCard { label: t("lblFxFadeIn"), hint: t("msgFxFadeInHint"), remove, on_remove,
                 NumberField {
-                    label: t("lblFxFadeMs"),
+                    label: t("lblFxFadeLength"),
+                    unit: t("lblUnitMs"),
                     value: Some(fd.ms),
                     min: 0,
-                    max: 60_000,
+                    max: engine::effects::MAX_FADE_MS,
                     auto: String::new(),
                     on_change: move |v: Option<u32>| edit_fade(settings, &i1, Kind::FadeIn, |x| x.ms = v.unwrap_or(2000)),
                 }
@@ -1865,10 +1963,11 @@ fn EffectItem(settings: Signal<Settings>, id: String, lang: String, item: Effect
         Effect::FadeOut(fd) => rsx! {
             EffectCard { label: t("lblFxFadeOut"), hint: t("msgFxFadeOutHint"), remove, on_remove,
                 NumberField {
-                    label: t("lblFxFadeMs"),
+                    label: t("lblFxFadeLength"),
+                    unit: t("lblUnitMs"),
                     value: Some(fd.ms),
                     min: 0,
-                    max: 60_000,
+                    max: engine::effects::MAX_FADE_MS,
                     auto: String::new(),
                     on_change: move |v: Option<u32>| edit_fade(settings, &i1, Kind::FadeOut, |x| x.ms = v.unwrap_or(2000)),
                 }
@@ -1886,6 +1985,7 @@ fn EffectItem(settings: Signal<Settings>, id: String, lang: String, item: Effect
                 }
                 NumberField {
                     label: t("lblFxSilenceThreshold"),
+                    unit: t("lblUnitDbFs"),
                     value: Some((-se.threshold_db).round() as u32),
                     min: 10,
                     max: 120,
@@ -1894,6 +1994,7 @@ fn EffectItem(settings: Signal<Settings>, id: String, lang: String, item: Effect
                 }
                 NumberField {
                     label: t("lblFxSilenceMargin"),
+                    unit: t("lblUnitMs"),
                     value: Some(se.margin_ms),
                     min: 0,
                     max: 5000,
@@ -2068,11 +2169,17 @@ pub fn EffectsEditor(settings: Signal<Settings>) -> Element {
                                             }
                                         },
                                         option { value: "", selected: true, "{s_add}" }
-                                        for k in addable {
-                                            option {
-                                                key: "{kind_value(k)}",
-                                                value: "{kind_value(k)}",
-                                                {kind_label(k, &lang)}
+                                        for g in Group::ALL {
+                                            if addable.iter().any(|k| k.group() == g) {
+                                                optgroup { key: "{group_value(g)}", label: group_label(g, &lang),
+                                                    for (k, label) in group_kinds(&addable, g, &lang) {
+                                                        option {
+                                                            key: "{kind_value(k)}",
+                                                            value: "{kind_value(k)}",
+                                                            "{label}"
+                                                        }
+                                                    }
+                                                }
                                             }
                                         }
                                     }

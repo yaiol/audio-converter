@@ -88,8 +88,9 @@ What sets it apart is that three choices are made separately, each from its own 
 - **Tags that survive the trip** - a field keeps its meaning from format to format under the name a tag editor shows (album artist, sort names, composer, BPM, lyrics, ISRC, custom fields), with repeated fields, track and disc totals and the whole date kept, and the cover picture carried to every format that can hold one.
 - **Tag cleaning as a setting** - keep everything except a list, or delete everything except a list, with wildcards; the cover has its own switch.
 - **An effects chain** - trim silence, keep a range, limit the length, channels, repair, low cut, noise reduction, de-esser, ten-band equaliser, bass and treble, dynamics, tempo, volume (loudness, peak, ReplayGain or fixed gain), fades, silence at the end, and ReplayGain tags with album gain.
-- **Presets with the encoder's own switches** - one quality knob per format, plus MP3, Vorbis, Opus, FLAC and AAC options, optional dither at 16 bit, and an (Original) choice that keeps each file's own format.
+- **Presets with the encoder's own switches** - one quality setting per format, plus MP3, Vorbis, Opus, FLAC and AAC options, optional dither at 16 bit, and an (Original) choice that keeps each file's own format.
 - **Where the files go** - a folder and a file-name pattern (`{artist}/{album}/{track} - {title}`), with the source's folder structure kept, and skip, overwrite or keep-both when a file exists.
+- **A command line** - `yac` ships beside the app and uses the same saved presets, tag settings, effects and destinations: `yac -p "MP3 320 kbps" -d Export Music/`. `yac --list` shows what can be named.
 - **Your language** - the interface is available in 52 languages.
 
 ---
@@ -110,7 +111,7 @@ What sets it apart is that three choices are made separately, each from its own 
 Requires the Rust toolchain (stable) and, for the installer, the Dioxus CLI (`cargo install dioxus-cli`). The app drives **ffmpeg**, which is not committed: `scripts/fetch-ffmpeg.sh <windows|linux|macos>` puts an LGPL build in `app/resources/`, and during development the one on your `PATH` is used.
 
 ```bash
-cargo run                                                       # run in development
+cargo run -p audio-converter                                                    # run in development
 cargo test                                                      # engine and app tests (the conversion tests need ffmpeg)
 cd app && dx bundle --desktop --release --package-types nsis    # Windows installer → release/
 ```
@@ -119,7 +120,7 @@ cd app && dx bundle --desktop --release --package-types nsis    # Windows instal
 
 ## Architecture
 
-A Cargo workspace of two crates: the **engine** (everything that is not the window - formats, presets, tags, effects, the job queue and the ffmpeg driver, with no UI dependency) and the **app** (the Dioxus desktop shell, which polls the engine every 200 ms; the engine never calls back into the window).
+A Cargo workspace of three crates: the **engine** (everything that is not the window - formats, presets, tags, effects, the job queue and the ffmpeg driver, with no UI dependency) the **app** (the Dioxus desktop shell, which polls the engine every 200 ms; the engine never calls back into the window) and the **cli** (`yac`: argument parsing and a printed summary over the same engine and the same saved settings).
 
 | Layer | Technology |
 |-------|-----------|

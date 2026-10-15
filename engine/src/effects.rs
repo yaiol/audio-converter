@@ -39,7 +39,36 @@ pub enum Kind {
     ReplayGain,
 }
 
+/// The longest fade, in ms: just under ten seconds. A fade is a few seconds at most, and the field that
+/// sets it is four digits wide.
+pub const MAX_FADE_MS: u32 = 9_999;
+
+/// What an effect acts on, for the "Add an effect" menu and the help. A grouping of the menu only:
+/// the run order stays the fixed one of `Kind::ALL`, whatever group a kind is listed under.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Group {
+    /// Which part is kept, and how long it is.
+    Time,
+    /// How loud it is, and how that changes.
+    Level,
+    /// What the sound itself is like.
+    Sound,
+}
+
+impl Group {
+    pub const ALL: [Group; 3] = [Group::Time, Group::Level, Group::Sound];
+}
+
 impl Kind {
+    /// The group the menu lists this kind under.
+    pub fn group(self) -> Group {
+        match self {
+            Kind::TrimSilence | Kind::CutRange | Kind::LimitDuration | Kind::SilenceEnd | Kind::Tempo => Group::Time,
+            Kind::Volume | Kind::Dynamics | Kind::FadeIn | Kind::FadeOut | Kind::ReplayGain => Group::Level,
+            Kind::Channels | Kind::Repair | Kind::LowCut | Kind::Denoise | Kind::DeEsser | Kind::Equalizer | Kind::Tone => Group::Sound,
+        }
+    }
+
     pub const ALL: [Kind; 17] = [
         Kind::TrimSilence,
         Kind::CutRange,
@@ -456,11 +485,11 @@ impl Effect {
                 Effect::Volume(v)
             }
             Effect::FadeIn(mut f) => {
-                f.ms = f.ms.min(60_000);
+                f.ms = f.ms.min(MAX_FADE_MS);
                 Effect::FadeIn(f)
             }
             Effect::FadeOut(mut f) => {
-                f.ms = f.ms.min(60_000);
+                f.ms = f.ms.min(MAX_FADE_MS);
                 Effect::FadeOut(f)
             }
             Effect::SilenceEnd(mut s) => {
@@ -1006,6 +1035,26 @@ pub fn plan(entry: &EffectsEntry, a: &Analysis, album: Option<&Album>) -> Effect
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_fade_is_never_longer_than_the_field_can_show() {
+        let mut entry = EffectsEntry::new("t");
+        entry.items.push(Effect::FadeIn(Fade { ms: 60_000 }));
+        entry.items.push(Effect::FadeOut(Fade { ms: 12_345 }));
+        let entry = entry.normalized();
+        assert_eq!(entry.fade_in().unwrap().ms, MAX_FADE_MS);
+        assert_eq!(entry.fade_out().unwrap().ms, MAX_FADE_MS);
+    }
+
+    #[test]
+    fn every_kind_is_listed_under_one_group_and_every_group_has_kinds() {
+        for g in Group::ALL {
+            assert!(Kind::ALL.iter().any(|k| k.group() == g), "{g:?} is empty");
+        }
+        // Three groups cover all seventeen kinds, none twice.
+        let total: usize = Group::ALL.iter().map(|g| Kind::ALL.iter().filter(|k| k.group() == *g).count()).sum();
+        assert_eq!(total, Kind::ALL.len());
+    }
+
     use super::*;
 
     const OUT: &str = "\

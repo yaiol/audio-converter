@@ -30,8 +30,8 @@ pub enum RateControl {
     Abr,
 }
 
-/// What the single quality control means for a given preset. The window shows ONE knob and its
-/// label, range and unit follow this - so the knob never offers a setting the format lacks.
+/// What the single quality control means for a given preset. The window shows ONE number field and its
+/// label, range and unit follow this - so it never offers a setting the format lacks.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum QualityKind {
     /// WAV: nothing to choose.
@@ -43,7 +43,7 @@ pub enum QualityKind {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct KnobRange {
+pub struct QualityRange {
     pub min: f64,
     pub max: f64,
     pub step: f64,
@@ -204,16 +204,16 @@ impl Preset {
         }
     }
 
-    pub fn knob_range(&self) -> Option<KnobRange> {
+    pub fn quality_range(&self) -> Option<QualityRange> {
         match self.quality_kind() {
             QualityKind::None => None,
             QualityKind::Compression => {
                 let max = if self.format == Format::WavPack { 8.0 } else { 12.0 };
-                Some(KnobRange { min: 0.0, max, step: 1.0, unit: "" })
+                Some(QualityRange { min: 0.0, max, step: 1.0, unit: "" })
             }
             QualityKind::VbrLevel => {
                 let max = if self.format == Format::Ogg { 10.0 } else { 9.0 };
-                Some(KnobRange { min: 0.0, max, step: 1.0, unit: "" })
+                Some(QualityRange { min: 0.0, max, step: 1.0, unit: "" })
             }
             QualityKind::Bitrate => {
                 let (min, max) = match self.format {
@@ -226,7 +226,7 @@ impl Preset {
                     _ => (32.0, 320.0),
                 };
                 let step = if self.format == Format::Ac3 { 64.0 } else { 8.0 };
-                Some(KnobRange { min, max, step, unit: "kbps" })
+                Some(QualityRange { min, max, step, unit: "kbps" })
             }
         }
     }
@@ -306,7 +306,7 @@ impl Preset {
             self.options.reset_aac();
         }
         self.options.clamp();
-        if let Some(r) = self.knob_range() {
+        if let Some(r) = self.quality_range() {
             let v = self.quality_value().clamp(r.min, r.max) as u32;
             match self.quality_kind() {
                 QualityKind::Compression => self.compression_level = v,
@@ -692,7 +692,7 @@ mod tests {
         const VALID: [u32; 19] =
             [32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 384, 448, 512, 576, 640];
         let p = Preset::new("t", Format::Ac3);
-        let r = p.knob_range().unwrap();
+        let r = p.quality_range().unwrap();
         let mut v = r.min;
         while v <= r.max {
             assert!(VALID.contains(&(v as u32)), "{v}");
@@ -708,7 +708,7 @@ mod tests {
         assert_eq!(args(&p), "-c:a alac -sample_fmt s16p");
         p.bit_depth = Some(24);
         assert_eq!(args(&p), "-c:a alac -sample_fmt s32p -bits_per_raw_sample 24");
-        assert!(p.knob_range().is_none());
+        assert!(p.quality_range().is_none());
     }
 
     #[test]
@@ -717,7 +717,7 @@ mod tests {
         assert_eq!(args(&p), "-c:a pcm_s16be -write_id3v2 1");
         p.bit_depth = Some(24);
         assert_eq!(args(&p), "-c:a pcm_s24be -write_id3v2 1");
-        assert!(p.knob_range().is_none());
+        assert!(p.quality_range().is_none());
     }
 
     #[test]
@@ -770,15 +770,15 @@ mod tests {
     }
 
     #[test]
-    fn the_knob_follows_the_format() {
+    fn the_quality_range_follows_the_format() {
         let mut p = Preset::new("t", Format::Mp3);
         assert_eq!(p.quality_kind(), QualityKind::Bitrate);
-        assert_eq!(p.knob_range().unwrap().unit, "kbps");
+        assert_eq!(p.quality_range().unwrap().unit, "kbps");
         p.rate_control = RateControl::Vbr;
         assert_eq!(p.quality_kind(), QualityKind::VbrLevel);
         p.format = Format::Wav;
         assert_eq!(p.quality_kind(), QualityKind::None);
-        assert!(p.knob_range().is_none());
+        assert!(p.quality_range().is_none());
     }
 
     #[test]

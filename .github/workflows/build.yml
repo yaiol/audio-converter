@@ -110,6 +110,9 @@ jobs:
           else
             echo "nothing to fetch"
           fi
+          if [ -f scripts/build-cli.sh ]; then
+            bash scripts/build-cli.sh
+          fi
 
       # Out dir is Dioxus.toml's `out_dir = "../release"` → release/ at the repo root.
       # The AppImage tool is itself an AppImage and a runner has no FUSE, so it is told to unpack and run.

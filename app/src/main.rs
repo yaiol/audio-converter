@@ -26,7 +26,7 @@ const CSS: [&str; 5] = [
     include_str!("../assets/ui-colors.css"),
     include_str!("../assets/ui-app.css"),
     include_str!("../assets/ui-listview.css"),
-    include_str!("../assets/ui-ctl-knob.css"),
+    include_str!("../assets/ui-ctl-equalizer.css"),
     include_str!("../assets/app.css"),
 ];
 
@@ -34,6 +34,12 @@ const CSS: [&str; 5] = [
 const APP_NAME: &str = env!("YAIOL_PRODUCT_NAME");
 const APP_ID: &str = env!("CARGO_PKG_NAME");
 const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// The narrowest the window may be: the file list and the options panel side by side.
+pub const MIN_WIDTH: f64 = 640.0;
+/// The shortest the window may be until the main view has measured what its panel needs, and if it
+/// never can.
+pub const MIN_HEIGHT_FALLBACK: f64 = 440.0;
 
 /// This build's identity, `<version>.<counter>`, as ONE contiguous string that survives into the
 /// executable. The apps-cockpit finds it by its `yaiol-build:` prefix to tell a buffered build from
@@ -50,19 +56,40 @@ const BUILD_ID: &str = concat!("yaiol-build:", env!("YAIOL_BUILD_ID"));
 /// ⚠ CLAUDE: DISPLAY ONLY. The release version (`CARGO_PKG_VERSION`) stays plain three-part semver
 /// and must not absorb the counter: an update check compares it against the published version, and
 /// four parts is not semver.
-/// The narrowest the window may be: the file list and the options panel side by side.
-pub const MIN_WIDTH: f64 = 640.0;
-/// The shortest the window may be until the main view has measured what its panel needs, and if it
-/// never can.
-pub const MIN_HEIGHT_FALLBACK: f64 = 440.0;
-
 fn app_version_build() -> String {
     let full = std::hint::black_box(BUILD_ID);
     let id = &full["yaiol-build:".len()..];
     id.strip_suffix(".0").unwrap_or(id).to_owned()
 }
 
+/// A window that opens at a known size and place. Only a debug build needs it written out: see main().
+#[cfg(debug_assertions)]
+fn explicit_placement(window: dioxus::desktop::WindowBuilder) -> dioxus::desktop::WindowBuilder {
+    window
+        .with_inner_size(dioxus::desktop::LogicalSize::new(1000.0, 700.0))
+        .with_position(dioxus::desktop::LogicalPosition::new(120.0, 80.0))
+}
+
+#[cfg(not(debug_assertions))]
+fn explicit_placement(window: dioxus::desktop::WindowBuilder) -> dioxus::desktop::WindowBuilder {
+    window
+}
+
 fn main() {
+    let window = dioxus::desktop::WindowBuilder::new()
+        .with_title(APP_NAME)
+        // Below this the list and the panel no longer fit side by side. The minimum HEIGHT is not
+        // known here: the main view measures what its panel needs and sets it (see converter.rs).
+        .with_min_inner_size(dioxus::desktop::LogicalSize::new(MIN_WIDTH, MIN_HEIGHT_FALLBACK));
+    // ⚠ CLAUDE: in a DEBUG build Dioxus writes the window's position and size to `window-state.json` in
+    // the temp folder when the app ends and puts the window back there on the next launch - for EVERY
+    // Dioxus app on the machine, from the one shared file. A session that ended while the window was
+    // MINIMIZED saved (-32000, -32000) and a 200 px square, so the next `cargo run` opened off screen
+    // at that size and could not be brought back (2026-10-15, and once before). Dioxus restores only
+    // what the app did NOT set explicitly, so a debug build sets both, here. A release build never
+    // restores anything and is left to the operating system's own placement.
+    let window = explicit_placement(window);
+
     dioxus::LaunchBuilder::desktop()
         .with_cfg(
             dioxus::desktop::Config::new()
@@ -70,13 +97,7 @@ fn main() {
                 // never offered. Dioxus keeps it in a debug build by default - which is how it reached the
                 // list on 2026-10-13 - and an app that wants a context menu draws its own.
                 .with_disable_context_menu(true)
-                .with_window(
-                    dioxus::desktop::WindowBuilder::new()
-                        .with_title(APP_NAME)
-                        // Below this the list and the panel no longer fit side by side. The minimum HEIGHT is not
-                        // known here: the main view measures what its panel needs and sets it (see converter.rs).
-                        .with_min_inner_size(dioxus::desktop::LogicalSize::new(MIN_WIDTH, MIN_HEIGHT_FALLBACK)),
-                )
+                .with_window(window)
                 .with_menu(None::<dioxus::desktop::muda::Menu>),
         )
         .launch(App);

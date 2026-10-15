@@ -5,18 +5,18 @@
 //! element structure as its JSX twin in the shared catalog. Only the controls this app uses are
 //! ported; the rest are `pending` — see the project's CLAUDE.md for the status table.
 
+mod equalizer;
 mod filedrop;
 mod header;
 mod icons;
-mod knob;
 mod numberfield;
 mod settings;
 mod update_banner;
 
+pub use equalizer::Equalizer;
 pub use filedrop::DropZone;
 pub use header::AppHeader;
 pub use icons::GithubIcon;
-pub use knob::Knob;
 pub use numberfield::NumberField as NumberInput;
 pub use settings::{AppTab, SettingsView};
 pub use update_banner::UpdateBanner;

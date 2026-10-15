@@ -34,59 +34,13 @@ struct Item {
     root: Option<PathBuf>,
 }
 
-/// Every audio file under `path` (or `path` itself), in a stable order.
-fn collect_audio(path: &Path, out: &mut Vec<PathBuf>, depth: u32) {
-    if path.is_dir() {
-        if depth > 12 {
-            return;
-        }
-        let Ok(rd) = std::fs::read_dir(path) else { return };
-        let mut entries: Vec<PathBuf> = rd.filter_map(|e| e.ok().map(|e| e.path())).collect();
-        entries.sort();
-        for e in entries {
-            collect_audio(&e, out, depth + 1);
-        }
-    } else if path
-        .file_name()
-        .is_some_and(|n| engine::is_audio_file(&n.to_string_lossy()))
-    {
-        out.push(path.to_path_buf());
-    }
-}
-
 fn percent_text(p: f32) -> String {
     format!("{} %", p.round() as u32)
 }
 
-/// How a run ended: how many were converted, skipped, failed - `3 converted · 1 skipped · 2 failed`.
-/// Empty when none of the three happened (nothing ran, or it was only cancelled).
-fn run_summary<'a>(statuses: impl Iterator<Item = &'a JobStatus>, lang: &str) -> String {
-    let (mut done, mut skipped, mut failed) = (0, 0, 0);
-    for s in statuses {
-        match s {
-            JobStatus::Done { .. } => done += 1,
-            JobStatus::Skipped { .. } => skipped += 1,
-            JobStatus::Failed { .. } => failed += 1,
-            _ => {}
-        }
-    }
-    let t = |key: &str| i18n::t(lang, key);
-    let mut parts = Vec::new();
-    if done > 0 {
-        parts.push(format!("{done} {}", t("lblMainNotifyDone")));
-    }
-    if skipped > 0 {
-        parts.push(format!("{skipped} {}", t("lblMainNotifySkipped")));
-    }
-    if failed > 0 {
-        parts.push(format!("{failed} {}", t("lblMainNotifyFailed")));
-    }
-    parts.join(" · ")
-}
-
 /// One operating-system notice for a finished run. A run that was only cancelled says nothing.
 fn notify_finished(snap: &HashMap<u64, JobStatus>, lang: &str) {
-    let body = run_summary(snap.values(), lang);
+    let body = engine::run_summary(snap.values(), lang);
     if body.is_empty() {
         return;
     }
@@ -216,7 +170,7 @@ pub fn Converter(
             // A dropped / picked FOLDER is the root its files keep their sub-folders relative to.
             let root = p.is_dir().then(|| p.clone());
             let mut found = Vec::new();
-            collect_audio(p, &mut found, 0);
+            engine::collect_audio(p, &mut found);
             for path in found {
                 if list.iter().any(|i| i.path == path) {
                     continue;
@@ -349,7 +303,7 @@ pub fn Converter(
             let finished = st.values().filter(|s| !s.is_active()).count();
             t("msgMainProgress").replace("{done}", &finished.to_string()).replace("{total}", &touched.to_string())
         } else if touched > 0 {
-            run_summary(st.values(), &settings.read().lang)
+            engine::run_summary(st.values(), &settings.read().lang)
         } else {
             t("msgMainReady").replace("{n}", &total.to_string())
         }

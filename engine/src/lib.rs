@@ -9,11 +9,13 @@ pub mod destination;
 pub mod effects;
 pub mod ffmpeg;
 pub mod format;
+pub mod i18n;
 pub mod mapping;
 pub mod options;
 pub mod preset;
 pub mod queue;
 pub mod riff;
+pub mod settings;
 pub mod tags;
 pub mod thumbnail;
 
@@ -172,4 +174,52 @@ mod tests {
         assert!(!is_audio_file("cover.jpg"));
         assert!(!is_audio_file("wav"));
     }
+}
+
+/// Every audio file under `path` (or `path` itself), in a stable order. A folder is searched
+/// recursively, to a depth that cannot loop through a link.
+pub fn collect_audio(path: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+    fn walk(path: &std::path::Path, out: &mut Vec<std::path::PathBuf>, depth: u32) {
+        if path.is_dir() {
+            if depth > 12 {
+                return;
+            }
+            let Ok(rd) = std::fs::read_dir(path) else { return };
+            let mut entries: Vec<std::path::PathBuf> = rd.filter_map(|e| e.ok().map(|e| e.path())).collect();
+            entries.sort();
+            for e in entries {
+                walk(&e, out, depth + 1);
+            }
+        } else if path.file_name().is_some_and(|n| is_audio_file(&n.to_string_lossy())) {
+            out.push(path.to_path_buf());
+        }
+    }
+    walk(path, out, 0);
+}
+
+/// How a run ended: how many were converted, skipped, failed - `3 converted · 1 skipped · 2 failed`.
+/// Empty when none of the three happened (nothing ran, or it was only cancelled). The one text the
+/// window's status line, its operating-system notice and the command line all print.
+pub fn run_summary<'a>(statuses: impl Iterator<Item = &'a JobStatus>, lang: &str) -> String {
+    let (mut done, mut skipped, mut failed) = (0, 0, 0);
+    for s in statuses {
+        match s {
+            JobStatus::Done { .. } => done += 1,
+            JobStatus::Skipped { .. } => skipped += 1,
+            JobStatus::Failed { .. } => failed += 1,
+            _ => {}
+        }
+    }
+    let t = |key: &str| i18n::t(lang, key);
+    let mut parts = Vec::new();
+    if done > 0 {
+        parts.push(format!("{done} {}", t("lblMainNotifyDone")));
+    }
+    if skipped > 0 {
+        parts.push(format!("{skipped} {}", t("lblMainNotifySkipped")));
+    }
+    if failed > 0 {
+        parts.push(format!("{failed} {}", t("lblMainNotifyFailed")));
+    }
+    parts.join(" · ")
 }

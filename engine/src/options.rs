@@ -1,4 +1,4 @@
-//! The encoder-specific options of a preset: the switches an encoder has beyond the one quality knob.
+//! The encoder-specific options of a preset: the switches an encoder has beyond the one quality setting.
 //!
 //! Every field means "leave the encoder's own choice" in its default state, so a preset that never
 //! opens the advanced section produces exactly the command line it did before these existed. Fields
