@@ -17,7 +17,7 @@ use dioxus_free_icons::{
     icons::ld_icons::{LdCopy, LdFolderOpen, LdPlus, LdTrash2},
 };
 use engine::{
-    CleanupMode, Destination, FlacStereo, Format, Id3Version, OpusApplication, OpusBandwidth, OpusVbr, Preset, QualityKind,
+    CleanupMode, Destination, FlacStereo, Format, Id3Version, LyricsMode, OpusApplication, OpusBandwidth, OpusVbr, Preset, QualityKind,
     RateControl, TagCleanup,
     effects::{Channels, ChannelsMode, CutRange, DeEsser, Denoise, Dynamics, DynamicsMode, EQ_BANDS_HZ, Effect, EffectsEntry, Equalizer, Fade, Group, Kind, LimitDuration, LowCut, Repair, ReplayGainTags, SilenceEnd, Tempo, Tone, TrimSilence, Volume, VolumeMode},
     options::{FLAC_BLOCK_SIZES, OPUS_FRAME_TENTHS},
@@ -699,6 +699,7 @@ pub fn DestinationEditor(settings: Signal<Settings>) -> Element {
     let s_source_label = t("lblMainDestSource");
     let s_source_fixed = t("msgDstSourceFixed");
     let s_no_folder = t("msgDstNoFolder");
+    let s_relative_hint = t("msgDstRelativeHint");
     let s_keep_structure = t("lblDstKeepStructure");
 
     // The example uses the format of the preset currently picked in the window.
@@ -881,6 +882,7 @@ pub fn DestinationEditor(settings: Signal<Settings>) -> Element {
                                 if folder_empty {
                                     p { class: "hint warn", "{s_no_folder}" }
                                 }
+                                p { class: "hint", "{s_relative_hint}" }
                             }
                             div { class: "dlg-field",
                                 label { class: "check-label",
@@ -976,15 +978,16 @@ fn NumberField(
         div { class: "dlg-field",
             label { class: "dlg-field-label", "{label}" }
             div { class: "manager-row",
+                // The catalog's number field takes any real number; this one is whole and unsigned.
                 NumberInput {
-                    value,
-                    min,
-                    max,
-                    step,
-                    width: number_width(max),
+                    value: value.map(f64::from),
+                    min: Some(f64::from(min)),
+                    max: Some(f64::from(max)),
+                    step: f64::from(step),
+                    width: format!("{}px", number_width(max)),
                     placeholder: auto,
                     allow_empty: true,
-                    on_change: move |v| on_change.call(v),
+                    on_change: move |v: Option<f64>| on_change.call(v.map(|n| n.round().max(0.0) as u32)),
                 }
                 if !unit.is_empty() {
                     span { "{unit}" }
@@ -1411,6 +1414,15 @@ pub fn CleanupEditor(settings: Signal<Settings>) -> Element {
     let s_del = t("btnMngDelete");
     let s_name = t("lblClnName");
     let s_remove_cover = t("lblClnRemoveCover");
+    let s_embed_lrc = t("lblClnEmbedLrc");
+    let s_embed_lrc_hint = t("msgClnEmbedLrcHint");
+    let s_lyrics = t("lblClnLyricsMode");
+    let s_lyrics_auto = t("lblClnLyricsAuto");
+    let s_lyrics_both = t("lblClnLyricsBoth");
+    let s_lyrics_uslt = t("lblClnLyricsUslt");
+    let s_lyrics_sylt = t("lblClnLyricsSylt");
+    let s_lyrics_strip = t("lblClnLyricsStrip");
+    let s_lyrics_hint = t("msgClnLyricsHint");
     let s_mode = t("lblClnMode");
     let s_mode_keep = t("lblMainCleanupKeep");
     let s_mode_delete = t("lblClnModeDelete");
@@ -1418,6 +1430,9 @@ pub fn CleanupEditor(settings: Signal<Settings>) -> Element {
 
     let id_name = cur_id.clone();
     let id_cover = cur_id.clone();
+    let id_embed = cur_id.clone();
+    let id_lyrics = cur_id.clone();
+    let id_strip = cur_id.clone();
     let id_dup = cur_id.clone();
     let id_del = cur_id.clone();
 
@@ -1554,6 +1569,60 @@ pub fn CleanupEditor(settings: Signal<Settings>) -> Element {
                             }
                             "{s_remove_cover}"
                         }
+                    }
+                    div { class: "dlg-field",
+                        label { class: "check-label",
+                            input {
+                                class: "check-box",
+                                r#type: "checkbox",
+                                checked: c.embed_lrc,
+                                onchange: move |e| {
+                                    let v = e.checked();
+                                    edit_cleanup(settings, &id_embed, |x| x.embed_lrc = v);
+                                },
+                            }
+                            "{s_embed_lrc}"
+                        }
+                        p { class: "hint", "{s_embed_lrc_hint}" }
+                    }
+                    div { class: "dlg-field",
+                        label { class: "dlg-field-label", "{s_lyrics}" }
+                        select {
+                            class: "select",
+                            value: match c.lyrics_mode {
+                                LyricsMode::Auto => "auto",
+                                LyricsMode::Duplicate => "both",
+                                LyricsMode::Uslt => "uslt",
+                                LyricsMode::Sylt => "sylt",
+                            },
+                            onchange: move |e| {
+                                let v = match e.value().as_str() {
+                                    "both" => LyricsMode::Duplicate,
+                                    "uslt" => LyricsMode::Uslt,
+                                    "sylt" => LyricsMode::Sylt,
+                                    _ => LyricsMode::Auto,
+                                };
+                                edit_cleanup(settings, &id_lyrics, |x| x.lyrics_mode = v);
+                            },
+                            option { value: "auto", selected: c.lyrics_mode == LyricsMode::Auto, "{s_lyrics_auto}" }
+                            option { value: "both", selected: c.lyrics_mode == LyricsMode::Duplicate, "{s_lyrics_both}" }
+                            option { value: "uslt", selected: c.lyrics_mode == LyricsMode::Uslt, "{s_lyrics_uslt}" }
+                            option { value: "sylt", selected: c.lyrics_mode == LyricsMode::Sylt, "{s_lyrics_sylt}" }
+                        }
+                        label { class: "check-label",
+                            input {
+                                class: "check-box",
+                                r#type: "checkbox",
+                                checked: c.lyrics_strip_time,
+                                disabled: c.lyrics_mode == LyricsMode::Sylt,
+                                onchange: move |e| {
+                                    let v = e.checked();
+                                    edit_cleanup(settings, &id_strip, |x| x.lyrics_strip_time = v);
+                                },
+                            }
+                            "{s_lyrics_strip}"
+                        }
+                        p { class: "hint", "{s_lyrics_hint}" }
                     }
                   }
                 }

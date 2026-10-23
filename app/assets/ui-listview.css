@@ -82,6 +82,7 @@
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .lv-item.active .lv-item-name { color: var(--accent); font-weight: 600; }
+.lv-item.lv-item-muted:not(.active) .lv-item-name { color: var(--text-mute); }   /* a row with nothing in it yet (a language with no text): greyed out; the active row keeps its accent */
 .lv-item-sub {
   font-size: 10.5px; color: var(--text-mute);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;

@@ -7,7 +7,7 @@ out_dir = "../release"
 [bundle]
 identifier = "com.yaiol.audio-converter.app"
 publisher = "yaiol"
-icon = ["assets/app.png", "assets/app.ico"]
+icon = ["assets/app.png", "assets/app.ico", "assets/app.icns"]
 short_description = "Audio converter"
 # The command line (yac) is built by scripts/build-cli.sh and lands here too, beside the window.
 # The conversion engine: scripts/fetch-ffmpeg.sh puts an LGPL ffmpeg here in CI. dx skips a listed

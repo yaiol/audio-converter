@@ -601,6 +601,14 @@ pub fn tag_arguments(
             a.push("-metadata".to_owned());
             a.push(format!("date={v}"));
         }
+    } else if let Some((_, v)) = source_tags.iter().find(|(k, _)| k.eq_ignore_ascii_case("date")) {
+        // ⚠ CLAUDE: a date with a stray carriage return after it (`2026-02-01\r`, found 2026-10-17 on a FLAC another
+        // tool had rewritten) is copied by ffmpeg as it is, and an MP3 then got TWO year frames - ffmpeg's and the
+        // tag layer's (`tags::restore_full_date`). The probe has trimmed the value: ffmpeg is handed that one.
+        if !v.is_empty() && !emptied.borrow().iter().any(|k| k.eq_ignore_ascii_case("date")) {
+            a.push("-metadata".to_owned());
+            a.push(format!("date={v}"));
+        }
     }
     for key in ["TYER", "TDAT", "TIME"] {
         if source_has(key) {
@@ -861,9 +869,10 @@ At least one output file must be specified";
             let source: HashMap<String, String> = pairs.iter().map(|(k, v)| ((*k).to_owned(), (*v).to_owned())).collect();
             build_args(Path::new("i.wav"), Path::new("o.mp3"), &p, &TagCleanup::keep(), &source, &[], false, SourceKind::default(), &crate::effects::EffectsPlan::default()).join(" ")
         };
-        let s = with(&[("date", "2025-11-24"), ("tyer", "2025-11-24"), ("title", "T")]);
+        let s = with(&[("date", "2025-11-24"), ("tyer", "1999-01-01"), ("title", "T")]);
         assert!(s.contains("-metadata TYER="), "{s}");
-        assert!(!s.contains("-metadata date="), "the real date is left alone: {s}");
+        // The real date is the one handed to ffmpeg (trimmed: see the note beside it), never the stray frame's.
+        assert!(s.contains("-metadata date=2025-11-24") && !s.contains("date=1999"), "{s}");
         // No date at all: the year the stray frame held becomes the date.
         let s = with(&[("tyer", "2019")]);
         assert!(s.contains("-metadata date=2019") && s.contains("-metadata TYER="), "{s}");

@@ -11,9 +11,9 @@ mod manager;
 mod notify;
 mod runner;
 mod settings;
-mod update;
+mod site;
 
-use catalog::{AppTab, GithubIcon, SettingsView, UpdateBanner};
+use catalog::{AppTab, GithubIcon, NewsLoader, NewsSetting, SettingsView, news};
 use converter::Converter;
 use dioxus::prelude::*;
 use dioxus_free_icons::{
@@ -22,11 +22,10 @@ use dioxus_free_icons::{
 };
 use manager::{CleanupEditor, DestinationEditor, EffectsEditor, NotifyEditor, PresetEditor};
 
-const CSS: [&str; 5] = [
+const CSS: [&str; 4] = [
     include_str!("../assets/ui-colors.css"),
     include_str!("../assets/ui-app.css"),
     include_str!("../assets/ui-listview.css"),
-    include_str!("../assets/ui-ctl-equalizer.css"),
     include_str!("../assets/app.css"),
 ];
 
@@ -109,20 +108,9 @@ fn App() -> Element {
     let mut settings_open = use_signal(|| false);
     // Which Settings tab is showing (and the one it opens on): display, presets, destinations, about.
     let mut settings_tab = use_signal(String::new);
-    let mut update = use_signal(|| Option::<String>::None);
-
-    // Once, on launch: is a newer release out that the user has not skipped? Blocking network, so it
-    // runs off the UI thread; silent when offline, and nothing is sent at all under YAIOL_DEV.
-    use_future(move || async move {
-        let skipped = settings.peek().skip_update.clone();
-        let found = tokio::task::spawn_blocking(move || update::check(APP_ID, APP_VERSION, &skipped))
-            .await
-            .ok()
-            .flatten();
-        if let Some(v) = found {
-            update.set(Some(v));
-        }
-    });
+    // "Show news from yaiol": ONE switch per MACHINE, shared by every yaiol app (a small file in the yaiol
+    // app-data folder), so it is read from there rather than from this app's own settings.
+    let mut news_on = use_signal(|| news::read_state().enabled);
 
     // <html> carries the language, its text direction and the theme: the catalog CSS keys off
     // `data-theme`, and a right-to-left language needs `dir` for the webview's own text engine.
@@ -146,6 +134,7 @@ fn App() -> Element {
     let t = |key: &str| i18n::t(&lang, key);
     let tip_help = t("tipHdrHelp");
     let tip_settings = t("tipHdrSettings");
+    let lbl_news = t("lblStgGeneralNews");
     let tab_presets = t("tabStgPresets");
     let tab_destinations = t("tabStgDestinations");
     let tab_cleanups = t("tabStgCleanups");
@@ -153,7 +142,7 @@ fn App() -> Element {
     let tab_notifications = t("tabStgNotifications");
 
     let version = app_version_build();
-    let help_url = update::site_url(APP_ID, &lang, "help");
+    let help_url = site::site_url(APP_ID, &lang, "help");
     let github_url = format!("https://github.com/yaiol/{APP_ID}");
 
     rsx! {
@@ -161,20 +150,8 @@ fn App() -> Element {
             style { "{css}" }
         }
         div { class: "app-root",
-            // Notify-only and dismissible. Skip remembers the version, so the banner stays quiet
-            // until a newer one ships.
-            if let Some(v) = update() {
-                UpdateBanner {
-                    version: v.clone(),
-                    app_id: APP_ID,
-                    lang: lang.clone(),
-                    on_skip: move |_| {
-                        settings.write().skip_update = v.clone();
-                        update.set(None);
-                    },
-                    on_close: move |_| update.set(None),
-                }
-            }
+            // A new version (first) and the yaiol news, in one dialog; what is shown is decided inside.
+            NewsLoader { app_id: APP_ID, app_version: APP_VERSION, lang: lang.clone() }
             Converter {
                 settings,
                 app_name: APP_NAME,
@@ -226,6 +203,16 @@ fn App() -> Element {
                         on_set_lang: move |l| settings.write().lang = l,
                         on_set_theme: move |th| settings.write().theme = th,
                         on_close: move |_| settings_open.set(false),
+                        general_extra: Some(rsx! {
+                            NewsSetting {
+                                enabled: news_on(),
+                                label: lbl_news.clone(),
+                                on_change: move |on: bool| {
+                                    news::set_enabled(on);
+                                    news_on.set(on);
+                                },
+                            }
+                        }),
                         app_tabs: vec![
                             AppTab {
                                 key: manager::PRESETS.to_owned(),

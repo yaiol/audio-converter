@@ -5,7 +5,7 @@
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
-    path::{Path, PathBuf},
+    path::{Component, Path, PathBuf},
 };
 
 /// Id of the built-in "same folder as the source" destination. Its display name is translated by
@@ -199,6 +199,44 @@ fn structure_below(input: &Path, source_root: Option<&Path>) -> Vec<String> {
         .collect()
 }
 
+/// Whether a destination folder is taken from each source file's own folder: anything that is not
+/// absolute - `convert`, `.\convert`, `..\convert`. An absolute path (`D:\Out`, a share) is one place
+/// for every file; so is a path with a root but no drive (`\Out`), which the system resolves itself.
+pub fn is_relative_folder(folder: &Path) -> bool {
+    !folder.as_os_str().is_empty() && !folder.is_absolute() && !folder.has_root()
+}
+
+/// The folder a destination names, for one source file. Empty: the source's own folder. Absolute: itself.
+/// Relative: counted from the source file's folder - `.\convert` is a `convert` folder beside the file,
+/// `..\convert` one beside its folder - so a single entry serves files in many folders. `.` and `..` are
+/// folded away rather than left in the path, so what is shown and created is the plain folder.
+pub fn base_folder(folder: &Path, input: &Path) -> PathBuf {
+    let own = input.parent().map(Path::to_path_buf).unwrap_or_default();
+    if folder.as_os_str().is_empty() {
+        return own;
+    }
+    if !is_relative_folder(folder) {
+        return folder.to_path_buf();
+    }
+    // `C:convert` (a drive but no root) is relative to that drive's current folder: not ours to fold.
+    if matches!(folder.components().next(), Some(Component::Prefix(_))) {
+        return folder.to_path_buf();
+    }
+    let mut out = own;
+    for part in folder.components() {
+        match part {
+            Component::Normal(name) => out.push(name),
+            Component::ParentDir => {
+                if !out.pop() {
+                    out.push("..");
+                }
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
 /// Decide the output path for `input`. Never returns the input itself: converting a FLAC to FLAC
 /// beside the source would otherwise overwrite the original while ffmpeg is reading it.
 ///
@@ -212,16 +250,16 @@ pub fn resolve_output(
     overwrite: Overwrite,
 ) -> Resolved {
     let stem = input.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "audio".to_owned());
-    let base = if dest.is_source() || dest.folder.trim().is_empty() {
-        input.parent().map(Path::to_path_buf).unwrap_or_default()
-    } else {
-        PathBuf::from(dest.folder.trim())
-    };
+    // A relative folder (`convert`, `.\convert`, `..\convert`) is counted from each file's own folder, so
+    // it keeps no structure either: the folders the files sit in already are the structure.
+    let folder = if dest.is_source() { Path::new("") } else { Path::new(dest.folder.trim()) };
+    let base = base_folder(folder, input);
+    let relative = is_relative_folder(folder);
     let pattern = if dest.is_source() { DEFAULT_PATTERN } else { dest.pattern.as_str() };
     let rel = render_pattern(pattern, tags, &stem);
 
     let mut path = base;
-    if dest.keep_structure && !dest.is_source() {
+    if dest.keep_structure && !dest.is_source() && !relative {
         for part in structure_below(input, source_root) {
             path.push(part);
         }
@@ -255,6 +293,34 @@ mod tests {
 
     fn tags(pairs: &[(&str, &str)]) -> HashMap<String, String> {
         pairs.iter().map(|(k, v)| ((*k).to_owned(), (*v).to_owned())).collect()
+    }
+
+    #[test]
+    fn a_relative_folder_is_counted_from_each_files_own_folder() {
+        let dir = std::env::temp_dir().join(format!("yaiol-dest-rel-{}", std::process::id()));
+        let a = dir.join("a").join("song.flac");
+        let b = dir.join("b").join("deep").join("song.flac");
+        let dest = |f: &str| Destination { id: "x".into(), folder: f.into(), keep_structure: true, ..Destination::default() };
+        let out = |d: &Destination, i: &Path, root: Option<&Path>| match resolve_output(d, i, root, &tags(&[]), "mp3", Overwrite::Skip) {
+            Resolved::Write(p) | Resolved::Skip(p) => p,
+        };
+        assert_eq!(out(&dest(".\\convert"), &a, None), dir.join("a").join("convert").join("song.mp3"));
+        assert_eq!(out(&dest(".\\convert"), &b, None), dir.join("b").join("deep").join("convert").join("song.mp3"));
+        assert_eq!(out(&dest("..\\convert"), &b, None), dir.join("b").join("convert").join("song.mp3"));
+        assert_eq!(out(&dest("convert"), &a, None), dir.join("a").join("convert").join("song.mp3"));
+        // An added folder's structure is not repeated under a relative folder.
+        let root = dir.join("Music");
+        let deep = root.join("Rock").join("song.flac");
+        assert_eq!(out(&dest("convert"), &deep, Some(&root)), root.join("Rock").join("convert").join("song.mp3"));
+    }
+
+    #[test]
+    fn parent_references_are_folded_and_an_absolute_folder_is_left_alone() {
+        let base = std::env::temp_dir();
+        let file = base.join("a").join("b").join("f.flac");
+        assert_eq!(base_folder(Path::new("../../x"), &file), base.join("x"));
+        assert_eq!(base_folder(&base.join("Out"), &file), base.join("Out"));
+        assert!(!is_relative_folder(Path::new("")));
     }
 
     #[test]

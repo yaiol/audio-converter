@@ -1,3 +1,4 @@
+// twin: ui-ctl-equalizer.jsx jsx@3dd3422b1b41 rsx@a245a0c74f03
 //! Equalizer — twin of `ui-ctl-equalizer.jsx`: a row of vertical gain sliders, one per band, with the
 //! value above and the caption below. Same classes and element order, so `ui-ctl-equalizer.css` skins
 //! it unchanged. Behaviour is the JSX's: grab a band and drag (the thumb goes where the pointer is,
@@ -7,9 +8,13 @@
 //! Pointer capture has no Rust API, so it goes through `document::eval` by element id - the one
 //! place this control touches the JS bridge. The band's box (its scale) comes from the mounted
 //! element, not from a constant, so the CSS stays the only place its height is written.
+//! Differs: none (compared line by line with the JSX on 2026-10-18: the quantising, the pointer / key / double-click
+//! rules, the ARIA values and the zero line are the same). Like the JSX it carries its paired stylesheet.
 
 use dioxus::prelude::*;
 use std::sync::atomic::{AtomicU32, Ordering};
+
+const CSS: &str = include_str!("../../assets/ui-ctl-equalizer.css");
 
 static NEXT_ID: AtomicU32 = AtomicU32::new(1);
 
@@ -47,6 +52,7 @@ pub fn Equalizer(
     let class = if disabled { "eq disabled" } else { "eq" };
 
     rsx! {
+        document::Style { "{CSS}" }
         div { class: "{class}", role: "group", title: if title.is_empty() { None } else { Some(title.clone()) },
             for (i, v) in values.iter().copied().enumerate() {
                 {

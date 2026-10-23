@@ -63,6 +63,11 @@ body {
 .converter-panel .barh-grp { width: 100%; }
 .converter-panel .select { flex: 1; min-width: 0; width: auto; max-width: none; }
 .converter-panel-run { display: flex; gap: 8px; }
+.converter-panel-apply { width: 100%; justify-content: center; }
+/* The list takes the keyboard (Ctrl+A) without a focus ring around the whole column. */
+.converter-list:focus { outline: none; }
+/* A row's tags: one chip per choice, wrapping under the path. */
+.converter-tags { display: flex; flex-wrap: wrap; gap: 4px 6px; margin-top: 4px; }
 /* width:auto beats the column rule above, or the group spans the row and its buttons stretch */
 .converter-panel .converter-panel-run .barh-grp { width: auto; flex: 0 0 auto; }
 /* The number at once is two digits at most: the select is as wide as that, not as the column. */

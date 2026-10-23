@@ -20,7 +20,10 @@ use lofty::{
     config::{ParseOptions, ParsingMode, WriteOptions},
     file::{AudioFile, TaggedFileExt},
     flac::FlacFile,
-    id3::v2::{CommentFrame, ExtendedTextFrame, Frame, FrameId, Id3v2Tag, TextInformationFrame, TimestampFrame, UnsynchronizedTextFrame},
+    id3::v2::{
+        BinaryFrame, CommentFrame, ExtendedTextFrame, Frame, FrameFlags, FrameId, Id3v2Tag, SyncTextContentType, SynchronizedTextFrame, TextInformationFrame,
+        TimestampFormat, TimestampFrame, UnsynchronizedTextFrame,
+    },
     iff::{aiff::AiffFile, wav::WavFile},
     mp4::{Atom, AtomData, AtomIdent, Ilst, Mp4File},
     mpeg::MpegFile,
@@ -29,6 +32,8 @@ use lofty::{
     tag::{items::Timestamp, ItemKey, ItemValue, TagType},
 };
 use std::{collections::HashMap, path::Path};
+
+use crate::cleanup::LyricsMode;
 
 /// What a patch did, for tests.
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
@@ -194,6 +199,10 @@ pub fn source_only_fields(source: &Path, have: &HashMap<String, String>) -> Vec<
         }
     }
     out.extend(mp4_dropped_fields(source, have));
+    // Timed lyrics held in an ID3 `SYLT` frame: ffmpeg does not list it, so a conversion lost them. They go on as `.lrc` text.
+    if let Some(text) = source_sylt_text(source) {
+        out.push(("LYRICS".to_owned(), text));
+    }
     out
 }
 
@@ -215,7 +224,9 @@ fn mp4_dropped_fields(source: &Path, have: &HashMap<String, String>) -> Vec<(Str
     }
     for fd in crate::mapping::FIELDS {
         let Some(atom) = fd.mp4.filter(|a| ATOMS.contains(a)) else { continue };
-        if have.keys().any(|k| crate::mapping::find_by_name(k).is_some_and(|x| std::ptr::eq(x, fd))) {
+        // ffmpeg already hands the field over: nothing to read. ORGANIZATION is the one spelling that does not
+        // count - it names the same field but can hold another value than the atom (a PUBLISHER next to it).
+        if have.keys().any(|k| !k.eq_ignore_ascii_case("ORGANIZATION") && crate::mapping::find_by_name(k).is_some_and(|x| std::ptr::eq(x, fd))) {
             continue;
         }
         let Some(bytes) = crate::mapping::atom_bytes(atom) else { continue };
@@ -441,9 +452,11 @@ fn fix_placeholder_frames(path: &Path) -> Result<usize, String> {
 
 /// Turn the custom text frames ffmpeg wrote for fields that have a frame of their own into that frame:
 /// `TXXX:LYRICIST` becomes `TEXT`, `TXXX:album-sort` `TSOA`, `TXXX:USLT` a real `USLT`, and so on, from
-/// Mp3tag's table (`mapping`). A real frame the file already has wins; the custom copy is then dropped.
-/// A field the table does not know stays custom. Returns how many were converted.
-fn promote_custom_frames(tag: &mut Id3v2Tag, v24: bool) -> usize {
+/// Mp3tag's table (`mapping`). A real frame the file already has wins; the custom copy is then dropped -
+/// unless it holds a DIFFERENT value (a FLAC with both `PUBLISHER` and `ORGANIZATION`, two spellings of one
+/// field): then it stays custom, so no value is ever lost. A field the table does not know stays custom.
+/// Returns how many were converted.
+fn promote_custom_frames(tag: &mut Id3v2Tag, v24: bool, later: &[(String, String)]) -> usize {
     let encoding = if v24 { TextEncoding::UTF8 } else { TextEncoding::UTF16 };
     let customs: Vec<(String, String)> = tag
         .iter()
@@ -456,6 +469,13 @@ fn promote_custom_frames(tag: &mut Id3v2Tag, v24: bool) -> usize {
     for (desc, value) in customs {
         let Some(field) = crate::mapping::find_by_name(&desc) else { continue };
         let Some(id) = (if v24 { field.id3_v24 } else { field.id3_v23 }) else { continue };
+        // Another spelling (`ORGANIZATION`) is not promoted when the field's own name is about to be written
+        // (`later`: the fields added after this step): it would take the frame and be overwritten, losing its value.
+        if !desc.eq_ignore_ascii_case(field.name)
+            && later.iter().any(|(k, _)| crate::mapping::find_by_name(k).is_some_and(|f| std::ptr::eq(f, field)))
+        {
+            continue;
+        }
         // The date frames are the date's job (see `ffmpeg::tag_arguments`), never a custom copy's.
         if matches!(id, "TYER" | "TDRC") {
             continue;
@@ -466,7 +486,14 @@ fn promote_custom_frames(tag: &mut Id3v2Tag, v24: bool) -> usize {
         let placeholder = if v24 { None } else { PLACEHOLDERS.iter().find(|(_, real)| *real == id).map(|(p, _)| *p) };
         let frame_id = FrameId::Valid(placeholder.unwrap_or(id).to_owned().into());
         let real_id = FrameId::Valid(id.to_owned().into());
-        if tag.get(&frame_id).is_none() && tag.get(&real_id).is_none() {
+        let held = tag.get(&frame_id).or_else(|| tag.get(&real_id));
+        // A real text frame the file already has, with another value: the custom copy is a second value, not a duplicate.
+        if let Some(Frame::Text(t)) = held {
+            if t.value.trim() != value.trim() {
+                continue;
+            }
+        }
+        if held.is_none() {
             match id {
                 "USLT" => {
                     let frame = UnsynchronizedTextFrame::new(encoding, *b"eng", String::new(), value);
@@ -483,6 +510,105 @@ fn promote_custom_frames(tag: &mut Id3v2Tag, v24: bool) -> usize {
         }
         let _ = tag.remove_user_text(&desc);
         n += 1;
+    }
+    n
+}
+
+
+// ── lyrics: SYLT and USLT ────────────────────────────────────────────────────
+
+/// The first `SYLT` frame of an ID3 tag as `.lrc` text.
+fn sylt_text(tag: &Id3v2Tag) -> Option<String> {
+    tag.iter().find_map(|fr| match fr {
+        Frame::Binary(b) if b.id().as_str() == "SYLT" => {
+            let sylt = SynchronizedTextFrame::parse(&b.as_bytes(), FrameFlags::default()).ok()?;
+            let entries: Vec<(u32, String)> = sylt
+                .content
+                .iter()
+                .map(|(t, text)| (if sylt.timestamp_format == TimestampFormat::MPEG { (f64::from(*t) * 26.122) as u32 } else { *t }, text.clone()))
+                .collect();
+            (!entries.is_empty()).then(|| crate::lyrics::to_lrc(&entries))
+        }
+        _ => None,
+    })
+}
+
+/// A source's `SYLT` (MP3, AIFF, the ID3 chunk of a WAV) as `.lrc` text.
+fn source_sylt_text(source: &Path) -> Option<String> {
+    let parse = ParseOptions::new().parsing_mode(ParsingMode::Relaxed);
+    let mut f = std::fs::File::open(source).ok()?;
+    let ext = source.extension()?.to_string_lossy().to_lowercase();
+    let tag: Id3v2Tag = match ext.as_str() {
+        "mp3" | "mp2" => MpegFile::read_from(&mut f, parse).ok()?.id3v2()?.clone(),
+        "aif" | "aiff" | "aifc" => AiffFile::read_from(&mut f, parse).ok()?.id3v2()?.clone(),
+        "wav" | "wave" => WavFile::read_from(&mut f, parse).ok()?.id3v2()?.clone(),
+        _ => return None,
+    };
+    sylt_text(&tag)
+}
+
+/// The text the lyrics are written from: the last `LYRICS` of `added` (a `.lrc` embedded, or a source's `SYLT`),
+/// and `added` without it - `add_id3` would write it as a custom frame.
+fn split_lyrics(added: &[(String, String)]) -> (Option<String>, Vec<(String, String)>) {
+    let text = added.iter().rev().find(|(n, _)| is_lyrics_name(n)).map(|(_, v)| v.clone());
+    (text, added.iter().filter(|(n, _)| !is_lyrics_name(n)).cloned().collect())
+}
+
+/// Is `name` a spelling of the lyrics field (`LYRICS`, `UNSYNCEDLYRICS`, `USLT`)?
+fn is_lyrics_name(name: &str) -> bool {
+    crate::mapping::find_by_name(name).is_some_and(|fd| fd.name == "UNSYNCEDLYRICS")
+}
+
+/// Write the lyrics of an ID3 tag as the frames `mode` asks for. `text` is what the source or a `.lrc` brought; with
+/// none, the tag's own `USLT` (ffmpeg's copy of the source's lyrics) is used. Every existing lyrics frame is replaced.
+/// Auto = one frame by the text (timed -> `SYLT`, plain -> `USLT`); Duplicate = both; Uslt / Sylt = that one.
+fn apply_lyrics(tag: &mut Id3v2Tag, v24: bool, mode: LyricsMode, strip_time: bool, text: Option<&str>) -> usize {
+    let existing = tag.iter().find_map(|fr| match fr {
+        Frame::UnsynchronizedText(f) if !f.content.trim().is_empty() => Some((f.content.to_string(), f.language)),
+        _ => None,
+    });
+    let language = existing.as_ref().map_or(*b"eng", |(_, l)| *l);
+    let Some(text) = text.map(str::to_owned).or_else(|| existing.map(|(t, _)| t)) else { return 0 };
+    let timed = crate::lyrics::is_timed(&text);
+    // The default path leaves a plain lyric exactly as it is.
+    if mode == LyricsMode::Auto && !strip_time && !timed {
+        return 0;
+    }
+    // Every lyrics frame goes, whatever its kind: the plain and the synchronised ones and a custom `LYRICS` frame an
+    // older copy of the same text may still sit in.
+    let spellings = crate::mapping::spellings("LYRICS");
+    tag.retain(|fr| match fr {
+        Frame::UnsynchronizedText(_) => false,
+        Frame::Binary(b) => b.id().as_str() != "SYLT",
+        Frame::UserText(t) => !spellings.iter().any(|s| s.eq_ignore_ascii_case(&t.description)),
+        _ => true,
+    });
+    let (uslt, sylt) = match mode {
+        LyricsMode::Auto => (!timed, timed),
+        LyricsMode::Duplicate => (true, true),
+        LyricsMode::Uslt => (true, false),
+        LyricsMode::Sylt => (false, true),
+    };
+    let encoding = if v24 { TextEncoding::UTF8 } else { TextEncoding::UTF16 };
+    let mut n = 0;
+    if uslt {
+        let words = if strip_time { crate::lyrics::strip_stamps(&text) } else { text.clone() };
+        tag.insert(Frame::UnsynchronizedText(UnsynchronizedTextFrame::new(encoding, language, String::new(), words)));
+        n += 1;
+    }
+    if sylt {
+        let entries: Vec<(u32, String)> = if timed {
+            crate::lyrics::timed_lines(&text)
+        } else {
+            crate::lyrics::plain_lines(&text).into_iter().map(|l| (0, l)).collect()
+        };
+        if !entries.is_empty() {
+            let frame = SynchronizedTextFrame::new(encoding, language, TimestampFormat::MS, SyncTextContentType::Lyrics, None, entries);
+            if let Ok(bytes) = frame.as_bytes(WriteOptions::new().use_id3v23(!v24)) {
+                tag.insert(Frame::Binary(BinaryFrame::new(FrameId::Valid("SYLT".into()), bytes)));
+                n += 1;
+            }
+        }
     }
     n
 }
@@ -517,7 +643,11 @@ fn restore_full_date(tag: &mut Id3v2Tag, source_tags: &HashMap<String, String>) 
 /// reads. A field the file already has is left alone.
 fn write_customs(ilst: &mut Ilst, customs: &[(String, String)]) -> usize {
     let mut n = 0;
-    for (name, value) in customs {
+    // A field's own name goes before another spelling of it (`PUBLISHER` before `ORGANIZATION`): when a source
+    // holds both, the real one takes the atom and the other stays a free-form field.
+    let mut ordered: Vec<&(String, String)> = customs.iter().collect();
+    ordered.sort_by_key(|(name, _)| crate::mapping::find_by_name(name).is_some_and(|fd| !fd.name.eq_ignore_ascii_case(name)));
+    for (name, value) in ordered {
         // A field Mp3tag's table gives an atom of its own is written as that atom, not free-form.
         if let Some(atom) = crate::mapping::find_by_name(name).and_then(|fd| fd.mp4).and_then(crate::mapping::atom_bytes) {
             let ident = AtomIdent::Fourcc(atom);
@@ -544,7 +674,14 @@ fn write_customs(ilst: &mut Ilst, customs: &[(String, String)]) -> usize {
                     continue;
                 }
             } else {
-                continue;
+                // The atom is there already. The same text is a duplicate (dropped); another text is a second
+                // value under another spelling (`PUBLISHER` and `ORGANIZATION`) and is kept as a free-form one.
+                let same = ilst.get(&ident).is_some_and(|a| {
+                    a.data().any(|d| matches!(d, AtomData::UTF8(s) | AtomData::UTF16(s) if s.trim() == value.trim()))
+                });
+                if same || matches!(&atom, b"trkn" | b"disk" | b"tmpo" | b"cpil") {
+                    continue;
+                }
             }
         }
         let ident = AtomIdent::Freeform { mean: "com.apple.iTunes".into(), name: name.clone().into() };
@@ -695,10 +832,12 @@ pub fn restore_repeated_fields(
             let mut file = AiffFile::read_from(&mut f, parse).map_err(err)?;
             drop(f);
             let tag = file.id3v2_mut().ok_or("no ID3 chunk")?;
-            let mut n = promote_custom_frames(tag, id3 == Id3Version::V24);
+            let mut n = promote_custom_frames(tag, id3 == Id3Version::V24, added);
             n += restore_full_date(tag, source_tags);
             n += patch_id3(tag, &groups, id3 == Id3Version::V24) + remove_listed_id3(tag, cleanup);
-            n += add_id3(tag, added, id3 == Id3Version::V24);
+            let (lyrics_text, rest) = split_lyrics(added);
+            n += add_id3(tag, &rest, id3 == Id3Version::V24);
+            n += apply_lyrics(tag, id3 == Id3Version::V24, cleanup.lyrics_mode, cleanup.lyrics_strip_time, lyrics_text.as_deref());
             if !cleanup.remove_cover && tag.iter().all(|fr| !matches!(fr, Frame::Picture(_))) {
                 if let Some(pic) = cover_picture(ffmpeg, source) {
                     tag.insert_picture(pic);
@@ -746,11 +885,13 @@ pub fn restore_repeated_fields(
                     }
                 }
             }
-            let mut n = promote_custom_frames(&mut id3_tag, id3 == Id3Version::V24);
+            let mut n = promote_custom_frames(&mut id3_tag, id3 == Id3Version::V24, added);
             n += restore_full_date(&mut id3_tag, source_tags);
             n += patch_id3(&mut id3_tag, &groups, id3 == Id3Version::V24);
             n += remove_listed_id3(&mut id3_tag, cleanup);
-            n += add_id3(&mut id3_tag, added, id3 == Id3Version::V24);
+            let (lyrics_text, rest) = split_lyrics(added);
+            n += add_id3(&mut id3_tag, &rest, id3 == Id3Version::V24);
+            n += apply_lyrics(&mut id3_tag, id3 == Id3Version::V24, cleanup.lyrics_mode, cleanup.lyrics_strip_time, lyrics_text.as_deref());
             file.set_id3v2(id3_tag);
             file.save_to_path(output, write).map_err(|e| format!("tag patch failed: {e}"))?;
             fix_placeholder_frames(output)?;
@@ -761,10 +902,12 @@ pub fn restore_repeated_fields(
             let mut file = MpegFile::read_from(&mut f, parse).map_err(err)?;
             drop(f);
             let tag = file.id3v2_mut().ok_or("no ID3v2 tag")?;
-            let mut n = promote_custom_frames(tag, id3 == Id3Version::V24);
+            let mut n = promote_custom_frames(tag, id3 == Id3Version::V24, added);
             n += restore_full_date(tag, source_tags);
             n += patch_id3(tag, &groups, id3 == Id3Version::V24) + remove_listed_id3(tag, cleanup);
-            n += add_id3(tag, added, id3 == Id3Version::V24);
+            let (lyrics_text, rest) = split_lyrics(added);
+            n += add_id3(tag, &rest, id3 == Id3Version::V24);
+            n += apply_lyrics(tag, id3 == Id3Version::V24, cleanup.lyrics_mode, cleanup.lyrics_strip_time, lyrics_text.as_deref());
             if n == 0 {
                 return Ok(None);
             }
@@ -895,6 +1038,12 @@ fn add_vorbis_cover(vc: &mut VorbisComments, ffmpeg: &Path, source: &Path, clean
 /// the source brought along (a ReplayGain tag from the source describes the SOURCE, not this file).
 fn add_vorbis(vc: &mut VorbisComments, added: &[(String, String)]) -> usize {
     for (name, value) in added {
+        // The lyrics added (an embedded .lrc, a source's SYLT) replace every spelling of the field (LYRICS, UNSYNCEDLYRICS).
+        if is_lyrics_name(name) {
+            for spelling in crate::mapping::spellings(name) {
+                vc.remove(&spelling).for_each(drop);
+            }
+        }
         vc.remove(name).for_each(drop);
         vc.push(name.clone(), value.clone());
     }
@@ -942,7 +1091,11 @@ fn add_ilst(ilst: &mut Ilst, added: &[(String, String)]) -> usize {
     for (name, value) in added {
         // A field the table gives an atom is written as that atom (`write_customs` knows how, and
         // leaves one the file already has alone).
-        if crate::mapping::find_by_name(name).is_some_and(|fd| fd.mp4.is_some()) {
+        if let Some(fd) = crate::mapping::find_by_name(name).filter(|fd| fd.mp4.is_some()) {
+            // Added lyrics are authoritative: the atom the file already holds (ffmpeg's copy of the source's lyrics) gives way.
+            if let (true, Some(bytes)) = (is_lyrics_name(name), fd.mp4.and_then(crate::mapping::atom_bytes)) {
+                let _ = ilst.remove(&AtomIdent::Fourcc(bytes));
+            }
             write_customs(ilst, &[(name.clone(), value.clone())]);
             continue;
         }

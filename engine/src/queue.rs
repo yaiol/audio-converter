@@ -264,6 +264,13 @@ fn run_job(inner: &Inner, spec: &JobSpec, cancel: &AtomicBool, child_slot: &Mute
     // What ffmpeg's listing leaves out goes with the effects' tags: after the cleaning in the formats the
     // tag layer writes, as an ordinary tag argument in those only ffmpeg writes (WavPack, TTA...).
     plan.tags.splice(0..0, carried.iter().cloned());
+    // The `.lrc` beside the source, when the tag entry asks for it, becomes the lyrics: it is added after the cleaning
+    // and last of all, so it wins over lyrics the source carries (and over a source's `SYLT` read above).
+    if cleanup.embed_lrc {
+        if let Some(text) = crate::lyrics::read_lrc(&spec.input) {
+            plan.tags.push(("LYRICS".to_owned(), text));
+        }
+    }
     let args = ffmpeg::build_args(&spec.input, &output, &preset, &cleanup, &probe.tags, &ignored, with_cover, probe.source, &plan);
 
     set_status(inner, spec.id, JobStatus::Running { percent: 0.0 });
@@ -1319,6 +1326,289 @@ mod tests {
         // ISO-8859-1 text after the encoding byte, NUL terminated: a bare year, not the whole date.
         let text = String::from_utf8_lossy(&body[1..]).trim_end_matches('\0').to_owned();
         assert_eq!(text, "2025", "the year frame holds {text:?}");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// Convert `src` to each of `formats` and hand back the bytes of every output.
+    fn converted_bytes(ff: &Path, dir: &Path, src: &Path, formats: &[Format], cleanup: &TagCleanup) -> Vec<Vec<u8>> {
+        let r = Runner::new(ff.to_path_buf());
+        let jobs = formats
+            .iter()
+            .enumerate()
+            .map(|(i, fmt)| JobSpec {
+                id: i as u64,
+                input: src.to_path_buf(),
+                source_root: None,
+                preset: Preset::new("t", *fmt),
+                cleanup: cleanup.clone(),
+                destination: Destination { folder: dir.join(format!("out-{i}")).to_string_lossy().into_owned(), ..Destination::new("t", "") },
+                overwrite: Overwrite::Rename,
+                effects: Default::default(),
+            })
+            .collect();
+        r.start(jobs, 3);
+        wait_idle(&r);
+        let mut done: Vec<(u64, Vec<u8>)> = r
+            .snapshot()
+            .into_iter()
+            .map(|(id, s)| match s {
+                JobStatus::Done { output } => (id, std::fs::read(output).unwrap()),
+                other => panic!("job {id}: {other:?}"),
+            })
+            .collect();
+        done.sort_by_key(|(id, _)| *id);
+        done.into_iter().map(|(_, b)| b).collect()
+    }
+
+    fn utf16(s: &str) -> Vec<u8> {
+        s.encode_utf16().flat_map(|u| u.to_le_bytes()).collect()
+    }
+
+    fn has_bytes(hay: &[u8], needle: &[u8]) -> bool {
+        hay.windows(needle.len()).any(|w| w == needle)
+    }
+
+    /// How many times `frame` (four ASCII characters) opens a frame of the ID3v2.3 tag at the start of `bytes`.
+    fn count_id3_frames(bytes: &[u8], frame: &str) -> usize {
+        let size = ((bytes[6] as usize & 0x7f) << 21) | ((bytes[7] as usize & 0x7f) << 14) | ((bytes[8] as usize & 0x7f) << 7) | (bytes[9] as usize & 0x7f);
+        let (mut pos, end, mut n) = (10usize, 10 + size, 0usize);
+        while pos + 10 <= end.min(bytes.len()) && bytes[pos].is_ascii_alphanumeric() {
+            let len = u32::from_be_bytes([bytes[pos + 4], bytes[pos + 5], bytes[pos + 6], bytes[pos + 7]]) as usize;
+            if &bytes[pos..pos + 4] == frame.as_bytes() {
+                n += 1;
+            }
+            pos += 10 + len;
+        }
+        n
+    }
+
+    #[test]
+    fn a_flac_with_a_whole_date_and_lyrics_gets_one_year_frame_not_two() {
+        let Some(ff) = ffmpeg() else { return };
+        let dir = scratch("one-year-frame");
+        let src = dir.join("src.flac");
+        let jpg = dir.join("cover.jpg");
+        assert!(ffmpeg::command(&ff)
+            .args(["-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "color=c=red:s=64x64", "-frames:v", "1"])
+            .arg(&jpg)
+            .status()
+            .unwrap()
+            .success());
+        // The tag set of a real single (Which Side Are You On): a whole date WITH A STRAY CARRIAGE RETURN after it (the file
+        // was found like that, 2026-10-17), timed lyrics, the label, a cover - converted
+        // with the owner's own tag cleaning entry (keep everything, delete COMMENT, AMLP_ID, GROUPING, ENCODE*).
+        assert!(ffmpeg::command(&ff)
+            .args(["-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "sine=frequency=440:duration=1", "-i"])
+            .arg(&jpg)
+            .args(["-map", "0:a", "-map", "1:v", "-c:v", "mjpeg", "-disposition:v", "attached_pic"])
+            .args(["-metadata", "TITLE=T", "-metadata", "DATE=2026-02-01\r", "-metadata", "ORGANIZATION=Some Label"])
+            .args(["-metadata", "COMPOSER=C", "-metadata", "COMPOSERSORT=C, C", "-metadata", "RELEASETYPE=Single", "-metadata", "CONTENTGROUP=Pop"])
+            .args(["-metadata", "LYRICS=[ti:x]
+[00:18.439]Come all of you
+[00:23.060]Good news"])
+            .arg(&src)
+            .status()
+            .unwrap()
+            .success());
+        let cleanup = TagCleanup {
+            exceptions: vec!["COMMENT; AMLP_ID;".into(), "GROUPING;".into(), "ENCODE*;".into()],
+            ..TagCleanup::keep()
+        };
+        for (label, cleanup) in [("default cleaning", TagCleanup::default()), ("the owner's cleaning entry", cleanup)] {
+            let out = converted_bytes(&ff, &dir.join(label.replace(' ', "-")), &src, &[Format::Mp3, Format::Aiff], &cleanup);
+            for (i, name) in ["mp3", "aiff"].iter().enumerate() {
+                let tag = if i == 0 { &out[0][..] } else { &out[1][out[1].windows(5).position(|w| w == b"ID3\x03\x00").expect("an ID3v2.3 tag in the AIFF")..] };
+                assert_eq!(count_id3_frames(tag, "TYER"), 1, "{label}: the {name} has more than one TYER frame");
+                assert_eq!(count_id3_frames(tag, "TDAT"), 1, "{label}: the {name} has no single TDAT frame");
+            }
+        }
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// Convert one source with the given preset and tag entry; the bytes of the output.
+    fn convert_one(ff: &Path, dir: &Path, src: &Path, preset: Preset, cleanup: TagCleanup) -> Vec<u8> {
+        let r = Runner::new(ff.to_path_buf());
+        r.start(
+            vec![JobSpec {
+                id: 1,
+                input: src.to_path_buf(),
+                source_root: None,
+                preset,
+                cleanup,
+                destination: Destination { folder: dir.to_string_lossy().into_owned(), ..Destination::new("t", "") },
+                overwrite: Overwrite::Rename,
+                effects: Default::default(),
+            }],
+            1,
+        );
+        wait_idle(&r);
+        let (_, s) = r.snapshot().into_iter().next().unwrap();
+        let JobStatus::Done { output } = s else { panic!("{s:?}") };
+        std::fs::read(output).unwrap()
+    }
+
+    const TIMED: &str = "[ti:Song]\n[00:01.00]hello world\n[00:05.50]second line\n";
+
+    /// A silent FLAC, with `lyrics` as its LYRICS tag when given.
+    fn flac_with_lyrics(ff: &Path, dir: &Path, lyrics: Option<&str>) -> PathBuf {
+        let src = dir.join("src.flac");
+        let mut c = ffmpeg::command(ff);
+        c.args(["-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "sine=frequency=440:duration=1", "-metadata", "TITLE=T"]);
+        if let Some(l) = lyrics {
+            c.args(["-metadata", &format!("LYRICS={l}")]);
+        }
+        assert!(c.arg(&src).status().unwrap().success());
+        src
+    }
+
+    fn embed() -> TagCleanup {
+        TagCleanup { embed_lrc: true, ..TagCleanup::keep() }
+    }
+
+    #[test]
+    fn a_lrc_beside_the_source_is_embedded_as_the_lyrics_of_every_format_that_holds_them() {
+        let Some(ff) = ffmpeg() else { return };
+        let dir = scratch("embed-lrc");
+        let src = flac_with_lyrics(&ff, &dir, None);
+        std::fs::write(dir.join("src.lrc"), TIMED).unwrap();
+        // Not asked for: nothing is embedded.
+        let plain = convert_one(&ff, &dir.join("off"), &src, Preset::new("t", Format::Flac), TagCleanup::keep());
+        assert!(!has_bytes(&plain, b"hello world"), "the .lrc was embedded without being asked");
+        let flac = convert_one(&ff, &dir.join("flac"), &src, Preset::new("t", Format::Flac), embed());
+        assert!(has_bytes(&flac, b"LYRICS=[ti:Song]"), "the FLAC has no LYRICS tag with the .lrc text");
+        let m4a = convert_one(&ff, &dir.join("m4a"), &src, Preset::new("t", Format::Aac), embed());
+        assert!(has_bytes(&m4a, b"\xa9lyr") && has_bytes(&m4a, b"hello world"), "the M4A has no lyrics atom");
+        let wma = convert_one(&ff, &dir.join("wma"), &src, Preset::new("t", Format::Wma), embed());
+        assert!(has_bytes(&wma, &utf16("WM/Lyrics")) && has_text(&wma, "hello world"), "the WMA has no WM/Lyrics");
+        let mp3 = convert_one(&ff, &dir.join("mp3"), &src, Preset::new("t", Format::Mp3), embed());
+        assert_eq!(count_id3_frames(&mp3, "SYLT"), 1, "Auto writes the timed lyrics as a SYLT");
+        assert_eq!(count_id3_frames(&mp3, "USLT"), 0, "Auto never writes both");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn the_four_lyrics_modes_and_the_checkbox_decide_which_id3_frames_are_written() {
+        let Some(ff) = ffmpeg() else { return };
+        let dir = scratch("lyrics-modes");
+        let timed_src = flac_with_lyrics(&ff, &dir, Some(TIMED));
+        let plain_dir = dir.join("plain");
+        std::fs::create_dir_all(&plain_dir).unwrap();
+        let plain_src = flac_with_lyrics(&ff, &plain_dir, Some("first line\nsecond line"));
+        use crate::cleanup::LyricsMode::{Auto, Duplicate, Sylt, Uslt};
+        // (mode, timed lyrics: SYLT / USLT frames, plain lyrics: SYLT / USLT frames)
+        for (mode, timed, plain) in [(Auto, (1, 0), (0, 1)), (Duplicate, (1, 1), (1, 1)), (Uslt, (0, 1), (0, 1)), (Sylt, (1, 0), (1, 0))] {
+            for (label, src, want) in [("timed", &timed_src, timed), ("plain", &plain_src, plain)] {
+                let cleanup = TagCleanup { lyrics_mode: mode, ..TagCleanup::keep() };
+                let out = convert_one(&ff, &dir.join(format!("{mode:?}-{label}")), src, Preset::new("t", Format::Mp3), cleanup);
+                let got = (count_id3_frames(&out, "SYLT"), count_id3_frames(&out, "USLT"));
+                assert_eq!(got, want, "{mode:?} on {label} lyrics: SYLT / USLT frames");
+            }
+        }
+        // The checkbox takes the stamps out of every USLT written; a SYLT keeps its times.
+        let kept = convert_one(&ff, &dir.join("keep-stamps"), &timed_src, Preset::new("t", Format::Mp3), TagCleanup { lyrics_mode: Uslt, ..TagCleanup::keep() });
+        assert!(has_text(&kept, "[00:01.00]hello world"), "the stamps are in the USLT by default");
+        let stripped = convert_one(
+            &ff,
+            &dir.join("strip-stamps"),
+            &timed_src,
+            Preset::new("t", Format::Mp3),
+            TagCleanup { lyrics_mode: Duplicate, lyrics_strip_time: true, ..TagCleanup::keep() },
+        );
+        assert!(has_text(&stripped, "hello world") && !has_text(&stripped, "[00:01"), "the USLT still holds stamps");
+        assert_eq!(count_id3_frames(&stripped, "SYLT"), 1, "the SYLT is kept beside the stripped USLT");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn the_lrc_wins_over_the_lyrics_the_source_already_carries() {
+        let Some(ff) = ffmpeg() else { return };
+        let dir = scratch("lrc-wins");
+        let src = flac_with_lyrics(&ff, &dir, Some("old lyrics already in the file"));
+        std::fs::write(dir.join("src.lrc"), TIMED).unwrap();
+        for (fmt, name) in [(Format::Flac, "flac"), (Format::Mp3, "mp3"), (Format::Aac, "m4a")] {
+            let out = convert_one(&ff, &dir.join(name), &src, Preset::new("t", fmt), embed());
+            assert!(has_text(&out, "hello world"), "the {name} does not hold the .lrc text");
+            assert!(!has_text(&out, "old lyrics"), "the {name} still holds the old lyrics");
+        }
+        // A tag entry that deletes the lyrics cannot take away what was embedded.
+        let deleting = TagCleanup { exceptions: vec!["LYRICS".into()], embed_lrc: true, ..TagCleanup::keep() };
+        let out = convert_one(&ff, &dir.join("deleting"), &src, Preset::new("t", Format::Flac), deleting);
+        assert!(has_bytes(&out, b"hello world") && !has_bytes(&out, b"old lyrics"), "the cleaning took the embedded lyrics away");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_sylt_in_the_source_comes_back_as_lrc_text_in_any_other_format() {
+        let Some(ff) = ffmpeg() else { return };
+        let dir = scratch("sylt-read");
+        let src = flac_with_lyrics(&ff, &dir, None);
+        std::fs::write(dir.join("src.lrc"), TIMED).unwrap();
+        // An MP3 whose only lyrics are a SYLT frame (Auto + the embedded .lrc makes exactly that).
+        let mp3_bytes = convert_one(&ff, &dir.join("mp3"), &src, Preset::new("t", Format::Mp3), embed());
+        assert_eq!(count_id3_frames(&mp3_bytes, "SYLT"), 1);
+        let mp3 = dir.join("from-sylt.mp3");
+        std::fs::write(&mp3, &mp3_bytes).unwrap();
+        for (fmt, name) in [(Format::Flac, "flac"), (Format::Aac, "m4a"), (Format::Wma, "wma"), (Format::Aiff, "aiff")] {
+            let out = convert_one(&ff, &dir.join(name), &mp3, Preset::new("t", fmt), TagCleanup::keep());
+            assert!(has_text(&out, "hello world"), "the {name} lost the lyrics of the SYLT");
+            // An ID3 target (AIFF) gets a SYLT again, whose times are binary; every other format holds .lrc text.
+            assert!(fmt == Format::Aiff || has_text(&out, "[00:01.00]"), "the {name} lost the timing of the SYLT");
+        }
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn organization_is_the_publisher_in_the_formats_that_have_one() {
+        let Some(ff) = ffmpeg() else { return };
+        let dir = scratch("organization");
+        let src = dir.join("src.flac");
+        // A FLAC the way the owner's library has them: the label under ORGANIZATION, no PUBLISHER.
+        assert!(ffmpeg::command(&ff)
+            .args(["-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "sine=frequency=440:duration=1"])
+            .args(["-metadata", "TITLE=T", "-metadata", "ORGANIZATION=Some Label"])
+            .arg(&src)
+            .status()
+            .unwrap()
+            .success());
+        let out = converted_bytes(&ff, &dir, &src, &[Format::Mp3, Format::Aac, Format::Wma, Format::Flac], &TagCleanup::default());
+        // MP3 (ID3v2.3, UTF-16): a real TPUB frame holds it, and no custom ORGANIZATION frame is left.
+        assert!(has_bytes(&out[0], b"TPUB"), "the mp3 has no publisher frame");
+        assert!(has_bytes(&out[0], &utf16("Some Label")), "the label is not in the mp3");
+        assert!(!has_bytes(&out[0], &utf16("ORGANIZATION")), "a custom ORGANIZATION frame is left in the mp3");
+        // M4A: the publisher atom, not a free-form one.
+        assert!(has_bytes(&out[1], b"\xa9pub"), "the m4a has no publisher atom");
+        assert!(has_bytes(&out[1], b"Some Label"), "the label is not in the m4a");
+        assert!(!has_bytes(&out[1], b"ORGANIZATION"), "a free-form ORGANIZATION atom is left in the m4a");
+        // WMA: WM/Publisher (UTF-16 name), no ORGANIZATION attribute.
+        assert!(has_bytes(&out[2], &utf16("WM/Publisher")), "the wma has no WM/Publisher attribute");
+        assert!(has_bytes(&out[2], &utf16("Some Label")), "the label is not in the wma");
+        assert!(!has_bytes(&out[2], &utf16("ORGANIZATION")), "an ORGANIZATION attribute is left in the wma");
+        // FLAC to FLAC: the name is the source's own, untouched.
+        assert!(has_bytes(&out[3], b"ORGANIZATION=Some Label"), "the FLAC lost its ORGANIZATION");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// The text is in the file, as ISO-8859-1 / UTF-8 (ffmpeg's own frames) or as UTF-16 (the tag library's).
+    fn has_text(hay: &[u8], s: &str) -> bool {
+        has_bytes(hay, s.as_bytes()) || has_bytes(hay, &utf16(s))
+    }
+
+    #[test]
+    fn a_source_with_both_publisher_and_organization_keeps_both_values() {
+        let Some(ff) = ffmpeg() else { return };
+        let dir = scratch("organization-both");
+        let src = dir.join("src.flac");
+        assert!(ffmpeg::command(&ff)
+            .args(["-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "sine=frequency=440:duration=1"])
+            .args(["-metadata", "TITLE=T", "-metadata", "PUBLISHER=Pub One", "-metadata", "ORGANIZATION=Org Two"])
+            .arg(&src)
+            .status()
+            .unwrap()
+            .success());
+        let out = converted_bytes(&ff, &dir, &src, &[Format::Mp3, Format::Aac, Format::Wma], &TagCleanup::default());
+        for (i, name) in ["mp3", "m4a", "wma"].iter().enumerate() {
+            assert!(has_text(&out[i], "Pub One") && has_text(&out[i], "Org Two"), "a value is missing in the {name}");
+        }
         let _ = std::fs::remove_dir_all(dir);
     }
 

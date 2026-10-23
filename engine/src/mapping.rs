@@ -78,7 +78,9 @@ pub const FIELDS: &[Field] = &[
     f("ORIGLYRICIST", &[], Some("TOLY"), Some("TOLY"), None, Some("WM/OriginalLyricist"), None, "ORIGLYRICIST"),
     // v2.4 holds the original release as a timestamp frame (TDOR), which is not a text frame.
     f("ORIGYEAR", &[], Some("TORY"), None, None, Some("WM/OriginalReleaseYear"), None, "ORIGYEAR"),
-    f("PUBLISHER", &["LABEL"], Some("TPUB"), Some("TPUB"), Some("\u{a9}pub"), Some("WM/Publisher"), None, "PUBLISHER"),
+    // ORGANIZATION is the Xiph spelling of the label (every FLAC of the owner's library carries it, none
+    // carries PUBLISHER), so it is the publisher in the formats that have a publisher field of their own.
+    f("PUBLISHER", &["LABEL", "ORGANIZATION"], Some("TPUB"), Some("TPUB"), Some("\u{a9}pub"), Some("WM/Publisher"), None, "PUBLISHER"),
     f("SUBTITLE", &[], Some("TIT3"), Some("TIT3"), None, Some("WM/SubTitle"), None, "SUBTITLE"),
     f("TITLE", &[], Some("TIT2"), Some("TIT2"), Some("\u{a9}nam"), Some("Title"), Some("INAM"), "TITLE"),
     f("TITLESORT", &["title-sort", "sort_name"], Some("TSOT"), Some("TSOT"), Some("sonm"), Some("WM/TitleSortOrder"), None, "TITLESORT"),

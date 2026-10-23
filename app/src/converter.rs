@@ -8,16 +8,16 @@ use crate::{
     catalog::{AppHeader, DropZone},
     i18n, manager,
     runner::RUNNER,
-    settings::Settings,
+    settings::{RunChoice, Settings},
 };
 use dioxus::prelude::*;
 use dioxus_free_icons::{
     Icon,
-    icons::ld_icons::{LdFilePlus, LdFolderOpen, LdFolderPlus, LdMusic, LdPlay, LdSlidersHorizontal, LdSquare, LdX},
+    icons::ld_icons::{LdAudioWaveform, LdEraser, LdFilePlus, LdFolderOpen, LdFolderPlus, LdListChecks, LdListMusic, LdMusic, LdPlay, LdReplace, LdSlidersHorizontal, LdSquare, LdX},
 };
 use engine::{JobSpec, JobStatus, Overwrite, destination::SOURCE_ID};
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     path::{Path, PathBuf},
     sync::atomic::{AtomicU64, Ordering},
     time::Duration,
@@ -32,6 +32,48 @@ struct Item {
     path: PathBuf,
     /// The folder this file was added through; None for a file added on its own.
     root: Option<PathBuf>,
+    /// What this file will be converted with - the panel's choices when it was added or last applied to it.
+    run: RunChoice,
+}
+
+/// The rows from `a` to `b` in list order, both included (the order the user sees, whichever end came first).
+fn range_between(ids: &[u64], a: u64, b: u64) -> Vec<u64> {
+    let (Some(x), Some(y)) = (ids.iter().position(|i| *i == a), ids.iter().position(|i| *i == b)) else {
+        return vec![b];
+    };
+    ids[x.min(y)..=x.max(y)].to_vec()
+}
+
+/// One tag of a row: the control's icon and the name of what was chosen.
+#[derive(Clone, PartialEq)]
+enum TagKind {
+    Preset,
+    Cleanup,
+    Effects,
+    Destination,
+    Overwrite,
+}
+
+#[component]
+fn RunTag(kind: TagKind, text: String, title: String) -> Element {
+    rsx! {
+        span { class: "chip", title: "{title}",
+            match kind {
+                TagKind::Preset => rsx! { Icon { width: 14, height: 14, icon: LdSlidersHorizontal } },
+                TagKind::Cleanup => rsx! { Icon { width: 14, height: 14, icon: LdEraser } },
+                TagKind::Effects => rsx! { Icon { width: 14, height: 14, icon: LdAudioWaveform } },
+                TagKind::Destination => rsx! { Icon { width: 14, height: 14, icon: LdListMusic } },
+                TagKind::Overwrite => rsx! { Icon { width: 14, height: 14, icon: LdReplace } },
+            }
+            "{text}"
+        }
+    }
+}
+
+/// Keeping the format, every tag and the cover, and applying no effect would only re-encode the file.
+fn nothing_to_do(s: &Settings, run: &RunChoice) -> bool {
+    let (c, e) = (s.cleanup_by(&run.cleanup_id), s.effects_by(&run.effects_id));
+    s.preset_by(&run.preset_id).is_original() && !c.edits_tags() && !c.remove_cover && e.items.is_empty()
 }
 
 fn percent_text(p: f32) -> String {
@@ -62,6 +104,9 @@ pub fn Converter(
     let mut statuses = use_signal(HashMap::<u64, JobStatus>::new);
     // Cover thumbnails as data URIs. A present key with None means "looked, there is none".
     let mut thumbs = use_signal(HashMap::<u64, Option<String>>::new);
+    // The rows the panel's Apply writes to, and the one a Shift+click counts from.
+    let mut selected = use_signal(HashSet::<u64>::new);
+    let mut anchor = use_signal(|| None::<u64>);
 
     // A few files at a time, off the UI thread, so a folder of hundreds fills in without a stall. The
     // picture is read in-process (no process per file); ffmpeg is only the fallback for what the
@@ -165,6 +210,9 @@ pub fn Converter(
     let t = |key: &str| i18n::t(&lang, key);
 
     let mut add_paths = move |paths: Vec<PathBuf>| {
+        // Added files take the panel's choices as they are now, and become the selection.
+        let run = settings.read().choice();
+        let mut fresh = Vec::new();
         let mut list = items.write();
         for p in &paths {
             // A dropped / picked FOLDER is the root its files keep their sub-folders relative to.
@@ -176,8 +224,14 @@ pub fn Converter(
                     continue;
                 }
                 let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-                list.push(Item { id: NEXT_ID.fetch_add(1, Ordering::Relaxed), name, path, root: root.clone() });
+                let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
+                fresh.push(id);
+                list.push(Item { id, name, path, root: root.clone(), run: run.clone() });
             }
+        }
+        if let Some(last) = fresh.last().copied() {
+            selected.set(fresh.into_iter().collect());
+            anchor.set(Some(last));
         }
     };
 
@@ -200,36 +254,45 @@ pub fn Converter(
     let ffmpeg_missing = RUNNER.is_none();
     let busy = statuses.read().values().any(JobStatus::is_active);
 
+    // Every file runs with ITS OWN choices; only the number at once belongs to the run. A file whose
+    // choices would only re-encode it as it is has nothing to do and is left out.
     let convert = move |_| {
         let Some(runner) = RUNNER.as_ref() else { return };
         let s = settings.read();
-        let preset = s.selected_preset();
-        let destination = s.selected_destination();
-        let cleanup = s.selected_cleanup();
-        let effects = s.selected_effects();
-        let overwrite = s.overwrite;
         let parallel = s.parallel as usize;
-        drop(s);
         let st = statuses.peek();
         let specs: Vec<JobSpec> = items
             .read()
             .iter()
             // Active ones are already queued or running; everything else - new, done, failed,
-            // skipped, cancelled - runs again with the current settings.
+            // skipped, cancelled - runs again with its current choices.
             .filter(|i| !st.get(&i.id).is_some_and(JobStatus::is_active))
+            .filter(|i| !nothing_to_do(&s, &i.run))
             .map(|i| JobSpec {
                 id: i.id,
                 input: i.path.clone(),
                 source_root: i.root.clone(),
-                preset: preset.clone(),
-                cleanup: cleanup.clone(),
-                destination: destination.clone(),
-                overwrite,
-                effects: effects.clone(),
+                preset: s.preset_by(&i.run.preset_id),
+                cleanup: s.cleanup_by(&i.run.cleanup_id),
+                destination: s.destination_by(&i.run.destination_id),
+                overwrite: i.run.overwrite,
+                effects: s.effects_by(&i.run.effects_id),
             })
             .collect();
         drop(st);
+        drop(s);
         runner.start(specs, parallel);
+    };
+    // Writes the panel's choices onto the selected rows (the ones not queued or converting right now).
+    let apply = move |_| {
+        let run = settings.read().choice();
+        let st = statuses.peek();
+        let sel = selected.peek();
+        for i in items.write().iter_mut() {
+            if sel.contains(&i.id) && !st.get(&i.id).is_some_and(JobStatus::is_active) {
+                i.run = run.clone();
+            }
+        }
     };
     let stop = move |_| {
         if let Some(r) = RUNNER.as_ref() {
@@ -247,6 +310,8 @@ pub fn Converter(
             }
         }
         items.write().retain(|i| !idle(&i.id));
+        let left: HashSet<u64> = items.read().iter().map(|i| i.id).collect();
+        selected.write().retain(|id| left.contains(id));
     };
 
     let have_items = !items.read().is_empty();
@@ -263,12 +328,13 @@ pub fn Converter(
     let cleanup_id = s.cleanup_id.clone();
     let mut effects_options: Vec<(String, String)> = vec![(crate::settings::NONE_ID.to_owned(), t("lblMainNone"))];
     effects_options.extend(s.effects.iter().map(|e| (e.id.clone(), e.name.clone())));
-    // Keep the format, keep the tags, apply nothing: converting would only re-encode, so there is
-    // nothing to do and the button is off.
+    // Every file keeps its format, its tags and applies nothing: converting would only re-encode them,
+    // so there is nothing to do and the button is off.
     let nothing_to_do = {
-        let (c, e) = (s.selected_cleanup(), s.selected_effects());
-        s.selected_preset().is_original() && !c.edits_tags() && !c.remove_cover && e.items.is_empty()
+        let st = statuses.read();
+        !items.read().iter().any(|i| !st.get(&i.id).is_some_and(JobStatus::is_active) && !nothing_to_do(&s, &i.run))
     };
+    let cfg = s.clone();
     let effects_id = s.effects_id.clone();
     let preset_id = s.preset_id.clone();
     let destination_id = s.destination_id.clone();
@@ -292,6 +358,10 @@ pub fn Converter(
     let s_main_preset = t("lblMainPreset");
     let s_main_edit_presets = t("tipMainEditPresets");
     let s_main_destination = t("tipMainDestination");
+    let s_main_apply = t("btnMainApply");
+    let s_main_apply_tip = t("tipMainApply");
+    let sel_now = selected.read().clone();
+    let can_apply = sel_now.iter().any(|id| !statuses.read().get(id).is_some_and(JobStatus::is_active));
     // The left of the footer: what the list holds, how far a run is, or how the last run ended.
     let status_text = {
         let st = statuses.read();
@@ -307,6 +377,12 @@ pub fn Converter(
         } else {
             t("msgMainReady").replace("{n}", &total.to_string())
         }
+    };
+    let status_text = if !sel_now.is_empty() && !busy {
+        let n = t("msgMainSelected").replace("{n}", &sel_now.len().to_string());
+        if status_text.is_empty() { n } else { format!("{status_text} · {n}") }
+    } else {
+        status_text
     };
     let s_main_edit_destinations = t("tipMainEditDestinations");
     let s_main_cleanup = t("tipMainCleanup");
@@ -380,7 +456,20 @@ pub fn Converter(
         if ffmpeg_missing {
             div { class: "workspace-empty converter-note", "{no_ffmpeg}" }
         }
-        div { class: "lv-scroll converter-list",
+        // ⚠ CLAUDE: tabindex makes the list the thing a click focuses, which is what lets Ctrl+A reach it;
+        // a click on the empty part clears the selection (a row's own click stops here).
+        div {
+            class: "lv-scroll converter-list",
+            tabindex: "0",
+            onclick: move |_| selected.set(HashSet::new()),
+            onkeydown: move |e| {
+                let m = e.modifiers();
+                let ctrl = m.contains(Modifiers::CONTROL) || m.contains(Modifiers::META);
+                if ctrl && matches!(e.key(), Key::Character(ref c) if c.eq_ignore_ascii_case("a")) {
+                    e.prevent_default();
+                    selected.set(items.peek().iter().map(|i| i.id).collect());
+                }
+            },
             if !have_items {
                 p { class: "workspace-empty", "{list_empty}" }
             }
@@ -402,8 +491,54 @@ pub fn Converter(
                     let id = item.id;
                     let path = item.path.display().to_string();
                     let tip = if active { t("tipMainCancel") } else { t("tipMainRemove") };
+                    // The row's own choices as tags: the control's icon and the name chosen. What keeps
+                    // everything as it is is left out, so a plain row shows only its preset.
+                    let r = &item.run;
+                    let preset_name = if r.preset_id == engine::preset::ORIGINAL_ID { t("lblMainPresetOriginal") } else { cfg.preset_by(&r.preset_id).name };
+                    let mut tags: Vec<(TagKind, String, String)> = vec![(TagKind::Preset, preset_name, s_main_preset.clone())];
+                    let cleanup = cfg.cleanup_by(&r.cleanup_id);
+                    if cleanup.edits_tags() || cleanup.remove_cover {
+                        tags.push((TagKind::Cleanup, cleanup.name.clone(), s_main_cleanup.clone()));
+                    }
+                    let effects = cfg.effects_by(&r.effects_id);
+                    if !effects.items.is_empty() {
+                        tags.push((TagKind::Effects, effects.name.clone(), s_main_effects.clone()));
+                    }
+                    if r.destination_id != SOURCE_ID {
+                        tags.push((TagKind::Destination, cfg.destination_by(&r.destination_id).name, s_main_destination.clone()));
+                    }
+                    match r.overwrite {
+                        Overwrite::Skip => {}
+                        Overwrite::Overwrite => tags.push((TagKind::Overwrite, s_main_overwrite_overwrite.clone(), s_main_overwrite.clone())),
+                        Overwrite::Rename => tags.push((TagKind::Overwrite, s_main_overwrite_rename.clone(), s_main_overwrite.clone())),
+                    }
+                    let row_class = if sel_now.contains(&id) { "lv-item converter-row active" } else { "lv-item converter-row" };
                     rsx! {
-                        div { key: "{id}", class: "lv-item converter-row",
+                        div {
+                            key: "{id}",
+                            class: "{row_class}",
+                            onclick: move |e| {
+                                e.stop_propagation();
+                                let m = e.modifiers();
+                                let ctrl = m.contains(Modifiers::CONTROL) || m.contains(Modifiers::META);
+                                let ids: Vec<u64> = items.peek().iter().map(|i| i.id).collect();
+                                if m.contains(Modifiers::SHIFT) {
+                                    let from = (*anchor.peek()).unwrap_or(id);
+                                    let mut set = if ctrl { selected.peek().clone() } else { HashSet::new() };
+                                    set.extend(range_between(&ids, from, id));
+                                    selected.set(set);
+                                } else if ctrl {
+                                    let mut set = selected.peek().clone();
+                                    if !set.remove(&id) {
+                                        set.insert(id);
+                                    }
+                                    selected.set(set);
+                                    anchor.set(Some(id));
+                                } else {
+                                    selected.set(HashSet::from([id]));
+                                    anchor.set(Some(id));
+                                }
+                            },
                             div { class: "lv-item-icon converter-cover-box",
                                 if let Some(Some(src)) = thumbs.read().get(&id) {
                                     img { class: "converter-cover", src: "{src}", alt: "" }
@@ -414,6 +549,11 @@ pub fn Converter(
                             div { class: "lv-item-body",
                                 div { class: "lv-item-name", "{item.name}" }
                                 div { class: "lv-item-sub", "{path}" }
+                                div { class: "converter-tags",
+                                    for (n, (kind, text, title)) in tags.into_iter().enumerate() {
+                                        RunTag { key: "{n}", kind, text, title }
+                                    }
+                                }
                             }
                             if !badge.is_empty() {
                                 span { class: "lv-item-badge converter-state converter-state-{state}", title: "{detail}", "{badge}" }
@@ -422,7 +562,8 @@ pub fn Converter(
                                 class: "btn icon subtle",
                                 title: "{tip}",
                                 "aria-label": "{tip}",
-                                onclick: move |_| {
+                                onclick: move |e| {
+                                    e.stop_propagation();
                                     if active {
                                         if let Some(r) = RUNNER.as_ref() {
                                             r.cancel(id);
@@ -432,6 +573,7 @@ pub fn Converter(
                                             r.remove(id);
                                         }
                                         items.write().retain(|i| i.id != id);
+                                        selected.write().remove(&id);
                                     }
                                 },
                                 Icon { width: 14, height: 14, icon: LdX }
@@ -480,7 +622,7 @@ pub fn Converter(
                     title: "{s_main_edit_cleanups}",
                     "aria-label": "{s_main_edit_cleanups}",
                     onclick: move |_| on_manage.call(manager::CLEANUPS.to_owned()),
-                    Icon { width: 14, height: 14, icon: LdSlidersHorizontal }
+                    Icon { width: 14, height: 14, icon: LdEraser }
                 }
             }
             div { class: "barh-grp",
@@ -499,7 +641,7 @@ pub fn Converter(
                     title: "{s_main_edit_effects}",
                     "aria-label": "{s_main_edit_effects}",
                     onclick: move |_| on_manage.call(manager::EFFECTS.to_owned()),
-                    Icon { width: 14, height: 14, icon: LdSlidersHorizontal }
+                    Icon { width: 14, height: 14, icon: LdAudioWaveform }
                 }
             }
             div { class: "barh-grp",
@@ -519,7 +661,7 @@ pub fn Converter(
                     title: "{s_main_edit_destinations}",
                     "aria-label": "{s_main_edit_destinations}",
                     onclick: move |_| on_manage.call(manager::DESTINATIONS.to_owned()),
-                    Icon { width: 14, height: 14, icon: LdSlidersHorizontal }
+                    Icon { width: 14, height: 14, icon: LdListMusic }
                 }
             }
             div { class: "barh-grp",
@@ -539,6 +681,17 @@ pub fn Converter(
                     option { value: "overwrite", selected: overwrite == Overwrite::Overwrite, "{s_main_overwrite_overwrite}" }
                     option { value: "rename", selected: overwrite == Overwrite::Rename, "{s_main_overwrite_rename}" }
                 }
+            }
+            // ⚠ CLAUDE: the panel is a brush. It never shows a row's choices and selecting rows never changes
+            // it; Apply writes ALL of it onto the selected rows, and is off when none can take it.
+            button {
+                class: "btn converter-panel-apply",
+                title: "{s_main_apply_tip}",
+                "aria-label": "{s_main_apply_tip}",
+                disabled: !can_apply,
+                onclick: apply,
+                Icon { width: 14, height: 14, icon: LdListChecks }
+                " {s_main_apply}"
             }
             div { class: "converter-panel-run",
                 div { class: "barh-grp",
@@ -593,5 +746,19 @@ pub fn Converter(
         div { class: "barh-footer",
             span { class: "converter-status", "{status_text}" }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::range_between;
+
+    #[test]
+    fn a_range_runs_in_list_order_whichever_end_came_first() {
+        let ids = [10, 11, 12, 13, 14];
+        assert_eq!(range_between(&ids, 11, 13), vec![11, 12, 13]);
+        assert_eq!(range_between(&ids, 13, 11), vec![11, 12, 13]);
+        assert_eq!(range_between(&ids, 12, 12), vec![12]);
+        assert_eq!(range_between(&ids, 99, 12), vec![12], "an anchor no longer in the list selects just the clicked row");
     }
 }

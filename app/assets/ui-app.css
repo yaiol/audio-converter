@@ -9,7 +9,7 @@
    ⚠ LAW ZERO — SHAPE + SIZE live in the BASE, ONCE. A variant / context may change
    COLOUR (and only colour). Two classes that are the same control (.btn/.btn.icon, the
    field family, the pill family) SHARE one base rule for geometry; they never each
-   re-declare height / radius / border / padding / weight. See CLAUDE-ui-standards-v2.md.
+   re-declare height / radius / border / padding / weight. See CLAUDE-ui-standards.md.
 
    NAMING — by orientation. A bar is named for WHAT it is, not WHERE it sits:
      barh-*  horizontal-bar family: .barh-header, .barh-footer + their furniture, .barh-grp weld.
@@ -161,7 +161,7 @@
   height: 20px; box-sizing: border-box;
   border-radius: 5px;
 }
-.btn.icon.small { min-width: 20px; }   /* small icon square — mirrors `.btn.icon { min-width: 30px }` */
+.btn.icon.small { min-width: 20px; font-size: 10px; }   /* small icon square — mirrors `.btn.icon { min-width: 30px }`; the 11px is for a short number or mark inside it (a glyph ignores it) */
 
 /* ── Option-selector buttons (.opt-btn in a .opt-btns row) — a labelled, mutually-exclusive choice:
       icon + label pills, exactly ONE `.active`. The theme picker (Dark/Light) AND any labelled selector
@@ -206,6 +206,7 @@
   width: 100%;
 }
 .input:focus { border-color: var(--accent); }
+.input.invalid, .input.invalid:focus { border-color: var(--danger); }   /* a field whose value is refused (a duplicate id, an empty required field): red frame, focused or not */
 
 /* Field trigger — a BUTTON that looks like a field and opens a custom popup (a rich dropdown a native
    <select> can't do, e.g. ampl's env switcher). Shares the field box; adds only its content layout +
@@ -356,7 +357,7 @@
 }
 
 /* The Knob (`.knob*`) moved out of the core into `ui-ctl-knob.css` (2026-09-05):
-   it skins an optional control, and now travels with it — see CLAUDE-ui-standards-v2.md → "Core vs optional control". */
+   it skins an optional control, and now travels with it — see CLAUDE-ui-standards.md → "Core vs optional control". */
 
 /* Hint — the ONE muted description text (under a label/control, a section note, a status line).
    Prose, so it inherits Inter (never JetBrains Mono). Used on ANY surface (dialog, bar, panel).
@@ -529,42 +530,7 @@ button.chip:hover { opacity: .8; }
 }
 
 /* The step grid (`.stepgrid*`) moved out of the core into `ui-ctl-stepgrid.css` (2026-09-05):
-   one app renders it, and it was 12 KB of the 62 KB every app carries — see CLAUDE-ui-standards-v2.md → "Core vs optional control". */
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   3. UPDATE BANNER  — "a new version is available" strip (lib/ui-update-banner.jsx)
-   ═══════════════════════════════════════════════════════════════════════════ */
-
-/* Pinned above the header (notify-only, dismissible). ONE shell for every app; rendered by the
-   shared component (never hand-build the markup). See app/electron/CLAUDE.md → "Update Check". */
-.update-banner {
-  background: var(--bg-elev);
-  border-bottom: 1px solid var(--border);
-  padding: 8px 12px;
-  flex-shrink: 0;
-  font-size: 13px;
-  color: var(--text);
-}
-.update-banner-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-.update-banner-label  { color: var(--accent); font-weight: 600; }
-.update-banner-spacer { flex: 1; }
-.update-banner-link {
-  background: none; border: none; color: var(--text-mute);
-  cursor: pointer; padding: 0; font-size: 13px;
-}
-.update-banner-link:hover  { color: var(--text); }
-.update-banner-link.skip   { text-decoration: underline; }
-.update-banner-download {
-  background: var(--accent); color: #fff; border: none;
-  border-radius: 4px; padding: 4px 12px; cursor: pointer;
-  font-size: 13px; font-weight: 600;
-}
-.update-banner-download:hover { background: var(--accent-hov); }
-.update-banner-dismiss {
-  background: none; border: none; color: var(--text-mute);
-  cursor: pointer; padding: 0; display: inline-flex; align-items: center;
-}
-.update-banner-dismiss:hover { color: var(--text); }
+   one app renders it, and it was 12 KB of the 62 KB every app carries — see CLAUDE-ui-standards.md → "Core vs optional control". */
 
 /* ═══════════════════════════════════════════════════════════════════════════
    4. BARS  — header / footer / vertical toolbar / statusbar + header furniture
@@ -793,16 +759,38 @@ button.chip:hover { opacity: .8; }
   width: 100%; max-width: 340px;
   text-align: center;
 }
+/* Wide — the SIZE option for a popup whose content outgrows the small card (a message + several
+   buttons). Same family, same shape: the width is the only thing it changes. */
+.dlp.wide { max-width: 480px; }
 /* Corner close — a popup has no header bar, so the shared .dl-close is positioned absolutely BY THE
    popup container. Dismiss via X, a Cancel button, or backdrop. */
 .dlp .dl-close { position: absolute; top: 12px; right: 12px; }   /* the popup places the shared close-X; shape/hover from the base above */
 .dlp-icon  { display: block; margin: 0 auto 12px; width: 40px; height: 40px; }   /* dialog hero icon sized by the control, not a size= prop */
 .dlp-title { margin: 0 0 8px; font-size: 17px; font-weight: 700; color: var(--text); }
+.dlp-subtitle { margin: 0 0 8px; font-size: 17px; font-weight: 400; color: var(--text-mute); }   /* second line under .dlp-title: same size, regular weight, muted */
+.dlp-sub.left { text-align: left; }   /* ALIGNMENT option: real text (paragraphs, a list) left-aligned while the title stays centred */
+ul.dlp-sub { padding-left: 40px; }   /* a bullet list inside the description: the app reset zeroes padding, so the bullets need their indent back */
 .dlp-sub   { margin: 0 0 24px; font-size: 13px; line-height: 1.5; color: var(--text-mute); }
 .dlp-body  { display: flex; flex-direction: column; gap: 8px; margin-bottom: 24px; text-align: left; }
 .dlp-foot  { display: flex; gap: 8px; justify-content: center; }
-.dlg-field { display: flex; flex-direction: column; gap: 6px; }
-.dlg-field.divider { border-top: 1px solid var(--border); padding-top: 16px; margin-top: 16px; }
+.dlp-nav   { display: flex; align-items: center; justify-content: center; gap: 6px; margin-bottom: 16px; }   /* pager under the text of a popup that pages through several items: ‹ 1 2 3 › (arrows + .chip numbers) */
+.dlp-pages { display: grid; grid-template-rows: minmax(0, 1fr); min-height: 0; }   /* every page in the SAME cell (.dlp-page), so the popup is as tall as its tallest page and never resizes when the page turns */
+.dlp-page  { grid-area: 1 / 1; display: flex; flex-direction: column; min-height: 0; }
+.dlp:has(> .dlp-pages) { display: flex; flex-direction: column; max-height: min(calc(100vh - 32px), 640px); }   /* a paging popup never outgrows the window, nor 640px on a tall one: the title, picture, pager and buttons stay, and only the text (.dlp-text) scrolls */
+.dlp:has(> .dlp-pages) .dlp-foot > .check-label { margin-right: auto; }   /* a paging popup's bottom row: the checkbox stays left, the buttons go right */
+.dlp-text  { overflow-y: auto; min-height: 0; padding-right: 12px; }   /* air between the text and its scrollbar */
+.dlp-page-off { visibility: hidden; }
+.dlp-image { aspect-ratio: 16 / 9; margin: 0 0 16px; border-radius: 8px; overflow: hidden; background: var(--bg-row); }   /* a popup's picture: a fixed 16:9 box, the image fitted inside it, so the popup keeps one size whether or not the picture loads */
+.dlp-image > img { display: block; width: 100%; height: 100%; object-fit: contain; }
+/* The field's SHAPE lives here, in the base - including the optional rule above it. It is OFF (width 0, no lead)
+   until `.divider` switches two TOKENS on: a variant names a value, it never writes geometry. */
+.dlg-field {
+  display: flex; flex-direction: column; gap: 6px;
+  border-top: var(--dlg-field-rule, 0) solid var(--border);
+  padding-top: var(--dlg-field-lead, 0);
+  margin-top: var(--dlg-field-lead, 0);
+}
+.dlg-field.divider { --dlg-field-rule: 1px; --dlg-field-lead: 16px; }
 .dlg-field-label {
   font-size: 11px; letter-spacing: 1px; text-transform: uppercase;
   font-weight: 600; color: var(--accent);
@@ -897,10 +885,10 @@ button.chip:hover { opacity: .8; }
    Flat toolbar (.barf) — a dense row of BORDERLESS icon buttons (an editor / formatting toolbar).
    The third arrangement beside the welded pills: NO frame; the .btn.icon children drop their border
    and show only a hover fill (keeping the 8px radius, so hover is a rounded chip). Sits on a body
-   surface, so the hover is --bg-hov. Buttons shrink-to-fit a resizable pane. Seed: markzen editor. */
+   surface, so the hover is --bg-hov. Seed: markzen editor.
+   The buttons are the catalog's own borderless icon button, `.btn.icon.subtle` (frame variant) - the bar
+   writes NO rule on them, so there is nothing here but the row itself. */
 .barf { display: flex; align-items: center; gap: 6px; }
-.barf .btn.icon { border: none; padding: 0; width: 30px; flex-shrink: 1; }
-.barf .btn.icon:hover:not(:disabled) { background: var(--s-hov); color: var(--text); }
 
 /* ─── Non-control icon contexts ────────────────────────────────────────────────
    Icons that aren't a toolbar control still get sized by their context here, so a

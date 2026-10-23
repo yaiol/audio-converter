@@ -1,20 +1,28 @@
+// twin: ui-icons.jsx jsx@6ef0932cb635 rsx@c7eb6620162c
 //! Twin of `ui-icons.jsx`. Lucide glyphs come from the `dioxus-free-icons` lucide set, never from
 //! hand copies; the GitHub mark is the one custom glyph, kept as the same path data.
+//! Differs: none in behaviour; the extra attributes are spread onto the svg as the JSX's `...props` are.
 
 use dioxus::prelude::*;
 
 #[component]
-pub fn GithubIcon() -> Element {
+pub fn GithubIcon(
+    #[props(default = 14)] size: u32,
+    /// Any attribute of the `<svg>` (`class`, `style`, `title`, `aria-*`, `data-*` ...) - the JSX's `...props`.
+    #[props(extends = GlobalAttributes)]
+    attributes: Vec<Attribute>,
+) -> Element {
     rsx! {
         svg {
             "data-icon": "yaiol:github",
-            width: "14",
-            height: "14",
+            width: "{size}",
+            height: "{size}",
             view_box: "0 0 1024 1024",
             fill: "none",
             xmlns: "http://www.w3.org/2000/svg",
             "aria-hidden": "true",
             "focusable": "false",
+            ..attributes,
             path {
                 fill_rule: "evenodd",
                 clip_rule: "evenodd",

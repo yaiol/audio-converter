@@ -10,6 +10,7 @@ pub mod effects;
 pub mod ffmpeg;
 pub mod format;
 pub mod i18n;
+pub mod lyrics;
 pub mod mapping;
 pub mod options;
 pub mod preset;
@@ -19,7 +20,7 @@ pub mod settings;
 pub mod tags;
 pub mod thumbnail;
 
-pub use cleanup::{CleanupMode, TagCleanup};
+pub use cleanup::{CleanupMode, LyricsMode, TagCleanup};
 pub use destination::{Destination, Overwrite};
 pub use format::Format;
 pub use options::{EncoderOptions, FlacStereo, OpusApplication, OpusBandwidth, OpusVbr};
@@ -56,14 +57,6 @@ pub fn compare_versions(a: &str, b: &str) -> Ordering {
     Ordering::Equal
 }
 
-/// Should the user be told about `latest`? True when it is newer than `current` and the user has not
-/// already skipped that version (or a later one). `skipped` is "" when nothing was skipped.
-pub fn update_wanted(latest: &str, current: &str, skipped: &str) -> bool {
-    if compare_versions(latest, current) != Ordering::Greater {
-        return false;
-    }
-    skipped.is_empty() || compare_versions(skipped, latest) == Ordering::Less
-}
 
 /// Alphabetical, case-insensitive, with runs of digits compared as numbers - so `Opus 64` comes
 /// before `Opus 128`, which a plain text sort gets backwards.
@@ -149,19 +142,7 @@ mod tests {
         assert_eq!(compare_versions("abc", "1.0.0"), Ordering::Less);
     }
 
-    #[test]
-    fn an_update_is_wanted_only_when_newer() {
-        assert!(update_wanted("1.0.4", "1.0.3", ""));
-        assert!(!update_wanted("1.0.3", "1.0.3", ""));
-        assert!(!update_wanted("1.0.2", "1.0.3", ""));
-    }
 
-    #[test]
-    fn a_skipped_version_stays_quiet_until_a_newer_one_ships() {
-        assert!(!update_wanted("1.0.4", "1.0.3", "1.0.4"));
-        assert!(!update_wanted("1.0.4", "1.0.3", "1.0.5"));
-        assert!(update_wanted("1.0.5", "1.0.3", "1.0.4"));
-    }
 
     #[test]
     fn accepts_known_extensions_in_any_case() {

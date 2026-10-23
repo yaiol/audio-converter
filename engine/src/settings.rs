@@ -33,9 +33,6 @@ pub const NONE_ID: &str = "none";
 pub struct Settings {
     pub lang: String,
     pub theme: String,
-    /// The newest version the user chose to ignore ("" = none). The twin of the electron apps'
-    /// `<alias>-skipUpdate` localStorage key.
-    pub skip_update: String,
     pub presets: Vec<Preset>,
     /// The user's saved destinations. The built-in "same folder as the source" is NOT stored here;
     /// it is always offered first.
@@ -72,7 +69,7 @@ impl Default for Settings {
         Self {
             lang: "en".to_owned(),
             theme: "light".to_owned(),
-            skip_update: String::new(),
+           
             presets,
             destinations: Vec::new(),
             cleanups: vec![TagCleanup::standard(&i18n::t("en", "lblMainCleanupKeep"))],
@@ -128,35 +125,69 @@ impl Settings {
         self
     }
 
-    /// The chosen preset; "(Original)" is the rule preset (`Preset::is_original`).
-    pub fn selected_preset(&self) -> Preset {
-        if self.preset_id == ORIGINAL_ID {
+    /// A preset by id; "(Original)" is the rule preset (`Preset::is_original`).
+    pub fn preset_by(&self, id: &str) -> Preset {
+        if id == ORIGINAL_ID {
             return Preset::original();
         }
-        self.presets.iter().find(|p| p.id == self.preset_id).unwrap_or(&self.presets[0]).clone()
+        self.presets.iter().find(|p| p.id == id).unwrap_or(&self.presets[0]).clone()
+    }
+
+    pub fn cleanup_by(&self, id: &str) -> TagCleanup {
+        if id == NONE_ID {
+            return TagCleanup::keep();
+        }
+        self.cleanups.iter().find(|c| c.id == id).or(self.cleanups.first()).cloned().unwrap_or_else(TagCleanup::keep)
+    }
+
+    pub fn effects_by(&self, id: &str) -> EffectsEntry {
+        if id == NONE_ID {
+            return EffectsEntry::default();
+        }
+        self.effects.iter().find(|e| e.id == id).or(self.effects.first()).cloned().unwrap_or_default()
+    }
+
+    pub fn destination_by(&self, id: &str) -> Destination {
+        self.destinations.iter().find(|d| d.id == id).cloned().unwrap_or_else(Destination::source)
+    }
+
+    pub fn selected_preset(&self) -> Preset {
+        self.preset_by(&self.preset_id)
     }
 
     pub fn selected_cleanup(&self) -> TagCleanup {
-        if self.cleanup_id == NONE_ID {
-            return TagCleanup::keep();
-        }
-        self.cleanups.iter().find(|c| c.id == self.cleanup_id).or(self.cleanups.first()).cloned().unwrap_or_else(TagCleanup::keep)
+        self.cleanup_by(&self.cleanup_id)
     }
 
     pub fn selected_effects(&self) -> EffectsEntry {
-        if self.effects_id == NONE_ID {
-            return EffectsEntry::default();
-        }
-        self.effects.iter().find(|e| e.id == self.effects_id).or(self.effects.first()).cloned().unwrap_or_default()
+        self.effects_by(&self.effects_id)
     }
 
     pub fn selected_destination(&self) -> Destination {
-        self.destinations
-            .iter()
-            .find(|d| d.id == self.destination_id)
-            .cloned()
-            .unwrap_or_else(Destination::source)
+        self.destination_by(&self.destination_id)
     }
+
+    /// Everything a run is made of, as the panel shows it now.
+    pub fn choice(&self) -> RunChoice {
+        RunChoice {
+            preset_id: self.preset_id.clone(),
+            cleanup_id: self.cleanup_id.clone(),
+            effects_id: self.effects_id.clone(),
+            destination_id: self.destination_id.clone(),
+            overwrite: self.overwrite,
+        }
+    }
+}
+
+/// The complete run settings of ONE file: the panel's choices when they were applied to it. Entries are
+/// kept by id, so editing a preset in Settings changes every file that uses it.
+#[derive(Clone, PartialEq, Debug)]
+pub struct RunChoice {
+    pub preset_id: String,
+    pub cleanup_id: String,
+    pub effects_id: String,
+    pub destination_id: String,
+    pub overwrite: Overwrite,
 }
 
 /// The settings file of the product called `product` (its display name, e.g. "Audio Converter").
@@ -208,12 +239,23 @@ mod tests {
     #[test]
     fn round_trips() {
         let p = temp("roundtrip").join("settings.json");
-        let mut s = Settings { lang: "ar".to_owned(), theme: "dark".to_owned(), skip_update: "1.2.0".to_owned(), ..Settings::default() };
+        let mut s = Settings { lang: "ar".to_owned(), theme: "dark".to_owned(), ..Settings::default() };
         s.destinations.push(Destination::new("Music", "D:/Music"));
         s.destination_id = s.destinations[0].id.clone();
         save_to(&p, &s);
         assert!(load_from(&p) == s);
         let _ = fs::remove_dir_all(p.parent().unwrap());
+    }
+
+    #[test]
+    fn a_choice_is_the_panel_as_it_is_and_resolves_by_id() {
+        let s = Settings { overwrite: Overwrite::Rename, ..Settings::default() };
+        let c = s.choice();
+        assert_eq!((c.preset_id.as_str(), c.destination_id.as_str(), c.overwrite), (s.preset_id.as_str(), SOURCE_ID, Overwrite::Rename));
+        assert_eq!(s.preset_by(&c.preset_id).id, s.selected_preset().id);
+        assert!(s.preset_by(ORIGINAL_ID).is_original());
+        assert!(s.destination_by("gone").is_source());
+        assert!(s.effects_by(NONE_ID).items.is_empty());
     }
 
     #[test]

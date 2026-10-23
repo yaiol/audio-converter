@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.3 — 2026-10-23
+
+- Per-file settings: select one or more files in the list and press Apply to give them the preset, tags setting, effects setting and destination currently chosen in the panel; a file keeps the settings it was given, and the footer shows how many files are selected
+- Timed lyrics held in an ID3 SYLT frame (MP3, AIFF, WAV) were silently lost on conversion and now carry over as .lrc text; the tag-cleaning entries gain lyrics options: embed the .lrc file that sits beside the source (same name) as the lyrics, replacing any the source has; choose the frame written (automatic by the text, both, always USLT, always SYLT); remove the times when writing USLT
+- A relative destination folder such as convert, ./convert or ../convert is now counted from each source file's own folder, so one entry serves files in many folders; the folder structure is not kept then
+- No tag value is lost when a source holds two spellings of one field (PUBLISHER and ORGANIZATION with different values): the second stays as its own free-form field
+- A date with a stray carriage return no longer gives an MP3 two year frames
+- A newer version now appears as a card in a news dialog instead of a banner strip: the card lists the release notes newer than the running version, links to the download page, and Don't show again hides it until a still newer version is out; occasional yaiol announcements appear in the same dialog, and Settings > General has a new Show news from yaiol switch that turns them off completely (the new-version card is not governed by it); the Display tab is now called General
+
 ## 1.0.2 — 2026-10-15
 
 - A command-line program, yac, installed beside the app, converts with the same saved presets, tag settings, effects and destinations as the window (-p, -t, -e, -d, -o, -j, --overwrite, --list, -q); the installer's last page offers, unticked, to add it to your PATH

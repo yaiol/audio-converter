@@ -55,7 +55,7 @@ const NAMES: &[(&str, &[&str])] = &[
     ("WM/Year", &["YEAR", "DATE", "TDRC", "TYER"]),
     ("WM/Writer", &["LYRICIST", "WRITER", "TEXT"]),
     ("WM/Conductor", &["CONDUCTOR", "TPE3"]),
-    ("WM/Publisher", &["PUBLISHER", "LABEL", "TPUB"]),
+    ("WM/Publisher", &["PUBLISHER", "LABEL", "ORGANIZATION", "TPUB"]),
     ("WM/ISRC", &["ISRC", "TSRC"]),
     ("WM/BeatsPerMinute", &["BPM", "TBPM"]),
     ("WM/Mood", &["MOOD"]),
@@ -319,6 +319,9 @@ pub fn finish(path: &Path, cleanup: &TagCleanup, cover: Option<&Cover>, added: &
 
     let mut changed = 0usize;
     let removing = cleanup.edits_tags();
+    // Standard attributes the effects/source-only step is about to write: a spelling of one of them
+    // (`ORGANIZATION` for `WM/Publisher`) keeps its own name, or the added value would overwrite it.
+    let added_std: Vec<&str> = added.iter().filter_map(|(n, _)| standard_name(n)).collect();
     for (g, obj) in objects.iter_mut() {
         if *g == EXT_CONTENT_DESC {
             let attrs = parse_extended(&obj[24..])?;
@@ -338,12 +341,16 @@ pub fn finish(path: &Path, cleanup: &TagCleanup, cover: Option<&Cover>, added: &
                 if let Some(std) = standard_name(&a.name) {
                     if a.name != std {
                         if out.iter().any(|o| o.name == std) {
-                            // The standard name is already there: the duplicate adds nothing.
+                            // The standard name is already there: the same value adds nothing; ANOTHER value
+                            // (`PUBLISHER` and `ORGANIZATION` in one source) is kept under its own name.
+                            if out.iter().any(|o| o.name == std && o.value == a.value) {
+                                changed += 1;
+                                continue;
+                            }
+                        } else if !added_std.contains(&std) {
+                            a.name = std.to_owned();
                             changed += 1;
-                            continue;
                         }
-                        a.name = std.to_owned();
-                        changed += 1;
                     }
                 }
                 out.push(a);

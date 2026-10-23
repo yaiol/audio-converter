@@ -25,6 +25,22 @@ pub enum CleanupMode {
     Delete,
 }
 
+/// How lyrics are stored in an ID3 tag (MP3, AIFF, the ID3 chunk of a WAV). A FLAC has one `LYRICS` field for
+/// timed and plain text alike, so the converter reads the text: lines with `[mm:ss.xx]` stamps are timed.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum LyricsMode {
+    /// One frame, chosen by the text: timed lyrics go to `SYLT`, plain ones to `USLT`. Never both.
+    #[default]
+    Auto,
+    /// Both frames: a `USLT` and a `SYLT` (a plain text gets every line at 0 ms in the `SYLT`).
+    Duplicate,
+    /// Always `USLT`, whatever the text.
+    Uslt,
+    /// Always `SYLT` (a plain text gets every line at 0 ms).
+    Sylt,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct TagCleanup {
@@ -39,6 +55,15 @@ pub struct TagCleanup {
     pub exceptions: Vec<String>,
     /// Leave the cover picture out. A switch of its own: the cover is a picture, not a tag name.
     pub remove_cover: bool,
+    /// Embed the `.lrc` file that sits beside a source (same name) as the output's lyrics. It wins over lyrics the
+    /// source already carries, and is added AFTER the cleaning, so an entry that deletes the lyrics tag cannot take
+    /// away what was asked to be embedded.
+    pub embed_lrc: bool,
+    /// Lyrics in an ID3 tag (MP3, AIFF, the ID3 chunk of a WAV) are written as the frames this asks for. It does nothing for
+    /// the other formats, which keep the text in their own lyrics field.
+    pub lyrics_mode: LyricsMode,
+    /// ID3 outputs: take the `[mm:ss.xx]` stamps out of the text of every `USLT` frame written.
+    pub lyrics_strip_time: bool,
     /// Read only, to carry a setting saved by a build that had a "remove all tags" switch: it becomes
     /// `mode = Delete` in `normalized` and is never written again.
     #[serde(default, skip_serializing)]
@@ -65,6 +90,9 @@ impl TagCleanup {
             mode: CleanupMode::Keep,
             exceptions: Vec::new(),
             remove_cover: false,
+            embed_lrc: false,
+            lyrics_mode: LyricsMode::Auto,
+            lyrics_strip_time: false,
             remove_all: false,
         }
     }
@@ -76,13 +104,16 @@ impl TagCleanup {
             mode: CleanupMode::Keep,
             exceptions: Vec::new(),
             remove_cover: false,
+            embed_lrc: false,
+            lyrics_mode: LyricsMode::Auto,
+            lyrics_strip_time: false,
             remove_all: false,
         }
     }
 
     /// True when it would change nothing.
     pub fn removes_nothing(&self) -> bool {
-        !self.remove_cover && !self.edits_tags()
+        !self.remove_cover && !self.embed_lrc && !self.edits_tags()
     }
 
     /// True when some tag is dropped: everything (`Delete`) or at least one named exception (`Keep`).

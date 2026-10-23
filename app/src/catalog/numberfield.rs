@@ -1,11 +1,15 @@
+// twin: ui-ctl-numberfield.jsx jsx@af787f8f9cdc rsx@e06d18d3e2fa
 //! NumberField — twin of `ui-ctl-numberfield.jsx`: a numeric input with themed ▲▼ steppers instead
 //! of the browser's own spinner. Same classes and element order (`.numfield`, `.numfield-input`,
 //! `.numfield-steppers`, `.numfield-step`), so `ui-app.css` skins it unchanged.
 //!
-//! Behaviour is the JSX's: the field keeps its own draft so the user can type freely (including a
-//! value below `min` on the way to a larger one), it emits a valid number while typing, and it
-//! CLAMPS to `[min, max]` on blur and on the steppers. `allow_empty` lets it be blank, which emits
-//! `None` - for "automatic" fields.
+//! Behaviour is the JSX's: the field keeps its own draft so the user can type freely (including a value below
+//! `min` on the way to a larger one), it emits a valid number while typing, and it CLAMPS to `[min, max]` on blur
+//! and on the steppers. Any real number: decimals and negatives (the value is `f64`). `allow_empty` lets it be
+//! blank, which emits `None` - for "automatic" fields (the JSX emits `''`).
+//! `width` is a CSS length (`"56px"`, `"100%"`), as the JSX's string form; `class` is its `className`.
+//! Differs: behaviour none. A caller's extra attributes are spread onto the input as the JSX's `...rest` is (event
+//! handlers go through the same spread); the value is `Option<f64>` where the JSX's is a number or `''`.
 
 use dioxus::prelude::*;
 
@@ -29,37 +33,47 @@ fn Chevron(up: bool) -> Element {
 
 #[component]
 pub fn NumberField(
-    value: Option<u32>,
-    #[props(default)] min: Option<u32>,
-    #[props(default)] max: Option<u32>,
-    #[props(default = 1)] step: u32,
-    /// Width in px. A number is a few digits wide, so a caller should always give one.
-    #[props(default)] width: Option<u32>,
-    #[props(default)] placeholder: String,
+    value: Option<f64>,
+    #[props(default)] min: Option<f64>,
+    #[props(default)] max: Option<f64>,
+    #[props(default = 1.0)] step: f64,
+    /// A CSS length: `"56px"`, `"100%"`. Empty = the stylesheet's own width.
+    #[props(default)] width: String,
     #[props(default = false)] disabled: bool,
     #[props(default = false)] allow_empty: bool,
+    #[props(default)] class: String,
     #[props(default)] title: String,
-    on_change: EventHandler<Option<u32>>,
+    on_change: EventHandler<Option<f64>>,
+    /// Any attribute of an `<input>` (`placeholder`, `aria-label`, `name` ...), put on the field itself - the JSX's `...rest`.
+    #[props(extends = GlobalAttributes, extends = input)]
+    attributes: Vec<Attribute>,
 ) -> Element {
-    let mut draft = use_signal(|| value.map(|v| v.to_string()).unwrap_or_default());
-    // Mirror the controlled value into the draft; a keystroke that was in range already pushed the
-    // same value up, so this only differs after a clamp or an outside change.
-    use_effect(use_reactive!(|value| draft.set(value.map(|v| v.to_string()).unwrap_or_default())));
+    let show = |v: Option<f64>| v.map(|n| n.to_string()).unwrap_or_default();
+    let mut draft = use_signal(|| show(value));
+    // Mirror the controlled value into the draft; a keystroke that was in range already pushed the same value up,
+    // so this only differs after a clamp or an outside change.
+    use_effect(use_reactive!(|value| draft.set(value.map(|n| n.to_string()).unwrap_or_default())));
 
-    let clamp = move |v: u32| v.max(min.unwrap_or(0)).min(max.unwrap_or(u32::MAX));
-    let bump = move |dir: i64| {
+    // A number into [min, max]; NaN is blank when blank is allowed, else the minimum (or 0).
+    let clamp = move |v: f64| -> Option<f64> {
+        if v.is_nan() {
+            return if allow_empty { None } else { Some(min.unwrap_or(0.0)) };
+        }
+        let v = min.map_or(v, |m| v.max(m));
+        Some(max.map_or(v, |m| v.min(m)))
+    };
+    let bump = move |dir: f64| {
         if disabled {
             return;
         }
-        let next = (i64::from(value.unwrap_or(min.unwrap_or(0))) + dir * i64::from(step)).max(0) as u32;
-        on_change.call(Some(clamp(next)));
+        on_change.call(clamp(value.unwrap_or(0.0) + dir * step));
     };
 
+    let class = if class.is_empty() { "numfield".to_string() } else { format!("numfield {class}") };
+    let style = if width.is_empty() { None } else { Some(format!("width: {width}")) };
+
     rsx! {
-        div {
-            class: "numfield",
-            style: if let Some(w) = width { format!("width: {w}px") } else { String::new() },
-            title: "{title}",
+        div { class: "{class}", style, title: "{title}",
             input {
                 class: "numfield-input",
                 r#type: "number",
@@ -67,15 +81,14 @@ pub fn NumberField(
                 min: min.map(|v| v.to_string()),
                 max: max.map(|v| v.to_string()),
                 step: "{step}",
-                placeholder: "{placeholder}",
                 disabled,
                 oninput: move |e| {
                     let raw = e.value();
                     draft.set(raw.clone());
                     if allow_empty && raw.trim().is_empty() {
                         on_change.call(None);
-                    } else if let Ok(n) = raw.trim().parse::<u32>() {
-                        if n >= min.unwrap_or(0) && n <= max.unwrap_or(u32::MAX) {
+                    } else if let Ok(n) = raw.trim().parse::<f64>() {
+                        if min.is_none_or(|m| n >= m) && max.is_none_or(|m| n <= m) {
                             on_change.call(Some(n));
                         }
                     }
@@ -86,11 +99,11 @@ pub fn NumberField(
                         on_change.call(None);
                         return;
                     }
-                    let n = raw.trim().parse::<u32>().unwrap_or_else(|_| min.unwrap_or(0));
-                    let n = clamp(n);
-                    draft.set(n.to_string());
-                    on_change.call(Some(n));
+                    let n = clamp(raw.trim().parse::<f64>().unwrap_or(f64::NAN));
+                    draft.set(show(n));
+                    on_change.call(n);
                 },
+                ..attributes,
             }
             span { class: "numfield-steppers", "aria-hidden": "true",
                 button {
@@ -98,7 +111,7 @@ pub fn NumberField(
                     r#type: "button",
                     tabindex: "-1",
                     disabled,
-                    onclick: move |_| bump(1),
+                    onclick: move |_| bump(1.0),
                     Chevron { up: true }
                 }
                 button {
@@ -106,7 +119,7 @@ pub fn NumberField(
                     r#type: "button",
                     tabindex: "-1",
                     disabled,
-                    onclick: move |_| bump(-1),
+                    onclick: move |_| bump(-1.0),
                     Chevron { up: false }
                 }
             }
