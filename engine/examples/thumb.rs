@@ -6,7 +6,7 @@ use audio_converter_engine::{ffmpeg, thumbnail};
 use std::{path::PathBuf, time::Instant};
 
 fn main() {
-    let ff = ffmpeg::locate();
+    let ff = ffmpeg::locate(audio_converter_engine::settings::ffmpeg_dir().as_deref());
     for arg in std::env::args().skip(1) {
         let path = PathBuf::from(&arg);
         let size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);

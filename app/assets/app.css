@@ -72,3 +72,14 @@ body {
 .converter-panel .converter-panel-run .barh-grp { width: auto; flex: 0 0 auto; }
 /* The number at once is two digits at most: the select is as wide as that, not as the column. */
 .converter-panel-run .select { flex: 0 0 auto; width: 4.5em; }
+
+/* The "Add an effect" group: a category button welded to the search box, which takes the rest of the width. */
+.fx-add { width: 100%; }
+.fx-add-combo { flex: 1 1 0; min-width: 0; display: flex; }
+.fx-add-combo .input { width: 100%; min-width: 0; height: 100%; }
+.fx-name-row { display: flex; gap: 6px; align-items: center; }
+.fx-name-row .input { flex: 1 1 0; min-width: 0; }
+.fx-card { display: flex; flex-direction: column; }
+.fx-head { display: flex; align-items: center; gap: 6px; padding: 4px 0; }
+.fx-title { flex: 1 1 0; min-width: 0; display: flex; align-items: center; gap: 6px; padding: 0; border: 0; background: none; color: inherit; font: inherit; cursor: pointer; text-align: left; }
+.fx-body { display: flex; flex-direction: column; gap: 18px; padding: 8px 0 12px 22px; }

@@ -6,8 +6,10 @@
 pub mod asf;
 pub mod cleanup;
 pub mod destination;
+pub mod download;
 pub mod effects;
 pub mod ffmpeg;
+pub mod ffmpeg_effects;
 pub mod format;
 pub mod i18n;
 pub mod lyrics;

@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.5.0 — 2026-10-27
+
+- ffmpeg is no longer shipped with the app or taken from the machine's PATH: the app downloads the build yaiol approves into the folder shared by all yaiol apps and checks it first; Settings has a new ffmpeg section with the installed version, the latest version and Update, and a first run without ffmpeg offers Download ffmpeg with a progress readout
+- The yac command line reports a clear message when ffmpeg is not installed yet
+- The effects are now built from ffmpeg's own filter list, so far more effects are available; the effects menu has an All category and buttons to open or close every effect at once
+- Effect fields are generated from each filter's parameters: time and frame-rate fields accept values such as 1:30 or 30000/1001, colours have a picker, files and folders are chosen from a dialog, each field has a reset to default, and an effect can be dragged to change when it runs
+- The hand-built effect editors (silence trimming, volume, fades, channels, equaliser, dynamics, tempo and the rest) are replaced by the generated effects
+- The effect and ffmpeg texts are updated in all 52 languages
+
 ## 1.0.3 — 2026-10-23
 
 - Per-file settings: select one or more files in the list and press Apply to give them the preset, tags setting, effects setting and destination currently chosen in the panel; a file keeps the settings it was given, and the footer shows how many files are selected

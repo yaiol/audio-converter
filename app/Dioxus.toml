@@ -9,10 +9,10 @@ identifier = "com.yaiol.audio-converter.app"
 publisher = "yaiol"
 icon = ["assets/app.png", "assets/app.ico", "assets/app.icns"]
 short_description = "Audio converter"
-# The command line (yac) is built by scripts/build-cli.sh and lands here too, beside the window.
-# The conversion engine: scripts/fetch-ffmpeg.sh puts an LGPL ffmpeg here in CI. dx skips a listed
-# resource that is not there (with a warning), so a developer build simply uses the ffmpeg on PATH.
-resources = ["resources/ffmpeg.exe", "resources/ffmpeg", "resources/yac.exe", "resources/yac"]
+# The command line (yac) is built by scripts/build-cli.sh and lands here, beside the window. dx skips a listed
+# resource that is not there (with a warning). ffmpeg is NOT a resource: the app installs it itself, into the
+# folder every yaiol app shares.
+resources = ["resources/yac.exe", "resources/yac"]
 
 # Skip: the installer does not touch WebView2. dx's script runs Microsoft's bootstrapper on EVERY
 # install, with no check for an installed runtime - about a minute, for nothing, on a machine that

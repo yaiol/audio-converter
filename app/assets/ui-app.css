@@ -309,6 +309,8 @@
   background-repeat: no-repeat;
   background-position: right 11px center;
 }
+/* the native popup paints its own rows: on a transparent select it would be white with the theme's light text */
+.select option, .select optgroup { background-color: var(--bg-elev); color: var(--text); }
 .select:hover { border-color: var(--text-dim); }
 .select:focus { border-color: var(--accent); }
 /* .select is the ONE field that can't ride the surface roles (a native popup sizes its rows off the

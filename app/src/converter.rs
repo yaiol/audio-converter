@@ -6,16 +6,21 @@
 
 use crate::{
     catalog::{AppHeader, DropZone},
+    ffmpeg_panel::{FfmpegPopup, Popup, download_note, install, installed_version, is_current},
     i18n, manager,
-    runner::RUNNER,
+    runner::{DOWNLOAD, LATEST, RUNNER, refresh_ffmpeg},
     settings::{RunChoice, Settings},
 };
 use dioxus::prelude::*;
 use dioxus_free_icons::{
     Icon,
-    icons::ld_icons::{LdAudioWaveform, LdEraser, LdFilePlus, LdFolderOpen, LdFolderPlus, LdListChecks, LdListMusic, LdMusic, LdPlay, LdReplace, LdSlidersHorizontal, LdSquare, LdX},
+    icons::ld_icons::{LdEraser, LdFilePlus, LdFolder, LdFolderOpen, LdFolderPlus, LdListChecks, LdMusic, LdPlay, LdReplace, LdSlidersHorizontal, LdSparkles, LdSquare, LdX},
 };
-use engine::{JobSpec, JobStatus, Overwrite, destination::SOURCE_ID};
+use engine::{
+    JobSpec, JobStatus, Overwrite,
+    destination::{PICK_ID, SOURCE_ID},
+    download::{DownloadState, LatestState},
+};
 use std::{
     collections::{HashMap, HashSet},
     path::{Path, PathBuf},
@@ -61,8 +66,8 @@ fn RunTag(kind: TagKind, text: String, title: String) -> Element {
             match kind {
                 TagKind::Preset => rsx! { Icon { width: 14, height: 14, icon: LdSlidersHorizontal } },
                 TagKind::Cleanup => rsx! { Icon { width: 14, height: 14, icon: LdEraser } },
-                TagKind::Effects => rsx! { Icon { width: 14, height: 14, icon: LdAudioWaveform } },
-                TagKind::Destination => rsx! { Icon { width: 14, height: 14, icon: LdListMusic } },
+                TagKind::Effects => rsx! { Icon { width: 14, height: 14, icon: LdSparkles } },
+                TagKind::Destination => rsx! { Icon { width: 14, height: 14, icon: LdFolder } },
                 TagKind::Overwrite => rsx! { Icon { width: 14, height: 14, icon: LdReplace } },
             }
             "{text}"
@@ -107,6 +112,22 @@ pub fn Converter(
     // The rows the panel's Apply writes to, and the one a Shift+click counts from.
     let mut selected = use_signal(HashSet::<u64>::new);
     let mut anchor = use_signal(|| None::<u64>);
+    // ffmpeg: is one installed, how an install is going, which version is in place.
+    let mut ffmpeg_ready = use_signal(|| RUNNER.ffmpeg().is_some());
+    let mut download = use_signal(|| DownloadState::Idle);
+    let mut installed = use_signal(installed_version);
+    // The popup the user closed (a failure): it stays closed until an install starts again.
+    let mut dismissed = use_signal(|| false);
+    let mut pick_nonce = use_signal(|| 0u32);
+    use_hook(|| {
+        // Which ffmpeg is the compatible one. Asked on every machine: the app cannot keep its ffmpeg right without
+        // the answer, so this is not the optional request the dev-machine switch exists to silence.
+        LATEST.check();
+        // Nothing installed: install it now, there is nothing for the user to decide.
+        if !*ffmpeg_ready.peek() {
+            install();
+        }
+    });
 
     // A few files at a time, off the UI thread, so a folder of hundreds fills in without a stall. The
     // picture is read in-process (no process per file); ffmpeg is only the fallback for what the
@@ -131,7 +152,7 @@ pub fn Converter(
             let jobs: Vec<_> = batch
                 .into_iter()
                 .map(|(id, path)| {
-                    let ff = crate::runner::FFMPEG.clone();
+                    let ff = RUNNER.ffmpeg();
                     let handle = tokio::task::spawn_blocking(move || {
                         use base64::{Engine, engine::general_purpose::STANDARD};
                         engine::thumbnail::cover_thumbnail(ff.as_deref(), &path, 96)
@@ -149,22 +170,43 @@ pub fn Converter(
         }
     });
 
-    // The window polls the runner; the engine never calls back into it. Only a CHANGED snapshot is
-    // written, so an idle queue does not re-render the list five times a second.
+    // The window polls the runner and the install; the engine never calls back into it. Only a CHANGED
+    // snapshot is written, so an idle queue does not re-render the list five times a second.
     use_future(move || async move {
         let mut was_active = false;
+        // A newer approved ffmpeg is installed by itself, once per launch (the popup says "Updating").
+        let mut update_tried = false;
         loop {
             tokio::time::sleep(Duration::from_millis(200)).await;
-            if let Some(r) = RUNNER.as_ref() {
-                let snap: HashMap<u64, JobStatus> = r.snapshot().into_iter().collect();
-                // A run just ended: tell the user, whichever window they are looking at.
-                let active = snap.values().any(JobStatus::is_active);
-                if was_active && !active && settings.peek().notify {
-                    notify_finished(&snap, &settings.peek().lang);
+            let snap: HashMap<u64, JobStatus> = RUNNER.snapshot().into_iter().collect();
+            // A run just ended: tell the user, whichever window they are looking at.
+            let active = snap.values().any(JobStatus::is_active);
+            if was_active && !active && settings.peek().notify {
+                notify_finished(&snap, &settings.peek().lang);
+            }
+            was_active = active;
+            if *statuses.peek() != snap {
+                statuses.set(snap);
+            }
+            let dl = DOWNLOAD.snapshot();
+            if dl.is_active() && *dismissed.peek() {
+                dismissed.set(false);
+            }
+            if *download.peek() != dl {
+                if matches!(dl, DownloadState::Done(_)) {
+                    ffmpeg_ready.set(refresh_ffmpeg(&RUNNER));
+                    installed.set(installed_version());
                 }
-                was_active = active;
-                if *statuses.peek() != snap {
-                    statuses.set(snap);
+                download.set(dl);
+            }
+            if let LatestState::Known(m) = LATEST.snapshot() {
+                if !update_tried
+                    && *ffmpeg_ready.peek()
+                    && !is_current(&m)
+                    && !DOWNLOAD.snapshot().is_active()
+                {
+                    update_tried = true;
+                    install();
                 }
             }
         }
@@ -251,13 +293,13 @@ pub fn Converter(
         });
     };
 
-    let ffmpeg_missing = RUNNER.is_none();
+    let ffmpeg_missing = !ffmpeg_ready();
     let busy = statuses.read().values().any(JobStatus::is_active);
 
     // Every file runs with ITS OWN choices; only the number at once belongs to the run. A file whose
     // choices would only re-encode it as it is has nothing to do and is left out.
     let convert = move |_| {
-        let Some(runner) = RUNNER.as_ref() else { return };
+        let runner = &*RUNNER;
         let s = settings.read();
         let parallel = s.parallel as usize;
         let st = statuses.peek();
@@ -295,19 +337,15 @@ pub fn Converter(
         }
     };
     let stop = move |_| {
-        if let Some(r) = RUNNER.as_ref() {
-            r.cancel_all();
-        }
+        RUNNER.cancel_all();
     };
     // Empties the list except what is queued or converting right now: a file that was never started
     // has no status at all, and it is the one a user most often wants gone.
     let clear_list = move |_| {
         let st = statuses.peek().clone();
         let idle = |id: &u64| st.get(id).map_or(true, |s| !s.is_active());
-        if let Some(r) = RUNNER.as_ref() {
-            for i in items.read().iter().filter(|i| idle(&i.id)) {
-                r.remove(i.id);
-            }
+        for i in items.read().iter().filter(|i| idle(&i.id)) {
+            RUNNER.remove(i.id);
         }
         items.write().retain(|i| !idle(&i.id));
         let left: HashSet<u64> = items.read().iter().map(|i| i.id).collect();
@@ -367,7 +405,9 @@ pub fn Converter(
         let st = statuses.read();
         let total = items.read().len();
         let touched = items.read().iter().filter(|i| st.contains_key(&i.id)).count();
-        if total == 0 {
+        if ffmpeg_missing && !download().is_active() {
+            t("msgMainNoFfmpeg")
+        } else if total == 0 {
             String::new()
         } else if busy {
             let finished = st.values().filter(|s| !s.is_active()).count();
@@ -407,8 +447,22 @@ pub fn Converter(
     let s_main_overwrite_rename = t("lblMainOverwriteRename");
     let s_main_parallel = t("tipMainParallel");
     let list_empty = t("msgMainListEmpty");
-    let no_ffmpeg = t("msgMainNoFfmpeg");
     let source_label = t("lblMainDestSource");
+    let pick_label = t("lblMainDestPick");
+
+    // The ffmpeg popup: the install's progress, or why it failed. An ffmpeg already in place being replaced is an
+    // update; with none, an install.
+    let downloading = download().is_active();
+    let update = ffmpeg_ready();
+    let popup = if downloading {
+        download_note(&lang, &download()).map(|text| Popup::Progress { text, update })
+    } else if dismissed() {
+        None
+    } else if matches!(download(), DownloadState::Failed(_)) {
+        download_note(&lang, &download()).map(|text| Popup::Failed { text, update })
+    } else {
+        None
+    };
 
     let drop_label = t("msgMainDropLabel");
 
@@ -453,8 +507,8 @@ pub fn Converter(
             {children}
         div { class: "converter-body",
         div { class: "converter-main",
-        if ffmpeg_missing {
-            div { class: "workspace-empty converter-note", "{no_ffmpeg}" }
+        if let Some(popup) = popup {
+            FfmpegPopup { lang: lang.clone(), popup, on_close: move |_| dismissed.set(true) }
         }
         // ⚠ CLAUDE: tabindex makes the list the thing a click focuses, which is what lets Ctrl+A reach it;
         // a click on the empty part clears the selection (a row's own click stops here).
@@ -565,13 +619,9 @@ pub fn Converter(
                                 onclick: move |e| {
                                     e.stop_propagation();
                                     if active {
-                                        if let Some(r) = RUNNER.as_ref() {
-                                            r.cancel(id);
-                                        }
+                                        RUNNER.cancel(id);
                                     } else {
-                                        if let Some(r) = RUNNER.as_ref() {
-                                            r.remove(id);
-                                        }
+                                        RUNNER.remove(id);
                                         items.write().retain(|i| i.id != id);
                                         selected.write().remove(&id);
                                     }
@@ -641,7 +691,7 @@ pub fn Converter(
                     title: "{s_main_edit_effects}",
                     "aria-label": "{s_main_edit_effects}",
                     onclick: move |_| on_manage.call(manager::EFFECTS.to_owned()),
-                    Icon { width: 14, height: 14, icon: LdAudioWaveform }
+                    Icon { width: 14, height: 14, icon: LdSparkles }
                 }
             }
             div { class: "barh-grp",
@@ -649,19 +699,39 @@ pub fn Converter(
                     class: "select",
                     title: "{s_main_destination}",
                     "aria-label": "{s_main_destination}",
+                    // A new key rebuilds the box after the folder picker closes: cancelled, it must not go on
+                    // showing the pick entry as if it were the choice.
+                    key: "{pick_nonce}",
                     value: "{destination_id}",
-                    onchange: move |e| settings.write().destination_id = e.value(),
+                    onchange: move |e| {
+                        let chosen = e.value();
+                        if chosen == PICK_ID {
+                            // Owned by the app's window: opened from the drop-down's own pop-up, a dialog without
+                            // an owner came up BEHIND the window.
+                            let window = dioxus::desktop::window();
+                            spawn(async move {
+                                if let Some(dir) = rfd::AsyncFileDialog::new().set_parent(&window.window).pick_folder().await {
+                                    let id = settings.write().destination_for_folder(dir.path());
+                                    settings.write().destination_id = id;
+                                }
+                                pick_nonce += 1;
+                            });
+                        } else {
+                            settings.write().destination_id = chosen;
+                        }
+                    },
                     option { value: "{SOURCE_ID}", selected: destination_id == SOURCE_ID, "{source_label}" }
                     for (id, name) in dest_options {
                         option { key: "{id}", value: "{id}", selected: id == destination_id, "{name}" }
                     }
+                    option { value: "{PICK_ID}", "{pick_label}" }
                 }
                 button {
                     class: "btn icon",
                     title: "{s_main_edit_destinations}",
                     "aria-label": "{s_main_edit_destinations}",
                     onclick: move |_| on_manage.call(manager::DESTINATIONS.to_owned()),
-                    Icon { width: 14, height: 14, icon: LdListMusic }
+                    Icon { width: 14, height: 14, icon: LdFolder }
                 }
             }
             div { class: "barh-grp",

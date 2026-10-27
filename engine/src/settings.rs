@@ -147,6 +147,17 @@ impl Settings {
         self.effects.iter().find(|e| e.id == id).or(self.effects.first()).cloned().unwrap_or_default()
     }
 
+    /// The id of the destination that writes into `dir`: one already saved for it, or a new entry named after the folder.
+    pub fn destination_for_folder(&mut self, dir: &Path) -> String {
+        if let Some(d) = self.destinations.iter().find(|d| d.writes_to(dir)) {
+            return d.id.clone();
+        }
+        let d = Destination::for_folder(dir);
+        let id = d.id.clone();
+        self.destinations.push(d);
+        id
+    }
+
     pub fn destination_by(&self, id: &str) -> Destination {
         self.destinations.iter().find(|d| d.id == id).cloned().unwrap_or_else(Destination::source)
     }
@@ -191,6 +202,12 @@ pub struct RunChoice {
 }
 
 /// The settings file of the product called `product` (its display name, e.g. "Audio Converter").
+/// The folder every yaiol app keeps its one ffmpeg in: shared by the apps, the command line and the debug and
+/// release builds alike, in a subfolder per manifest schema (an older app never meets a pair it cannot read), and per user, so installing or replacing it needs no administrator rights.
+pub fn ffmpeg_dir() -> Option<PathBuf> {
+    Some(dirs::data_local_dir()?.join("yaiol").join("Common Files").join("bin").join(crate::download::SCHEMA.to_string()))
+}
+
 fn path(product: &str) -> Option<PathBuf> {
     let folder = if cfg!(debug_assertions) { format!("{product} (Dev)") } else { product.to_owned() };
     Some(dirs::data_dir()?.join("yaiol").join(folder).join("settings.json"))
@@ -234,6 +251,18 @@ mod tests {
 
     fn temp(name: &str) -> PathBuf {
         std::env::temp_dir().join(format!("yaiol-settings-test-{}-{name}", std::process::id()))
+    }
+
+    #[test]
+    fn a_picked_folder_becomes_a_saved_destination_once() {
+        let mut s = Settings::default();
+        let before = s.destinations.len();
+        let dir = Path::new(r"D:\Out\Reels");
+        let id = s.destination_for_folder(dir);
+        assert_eq!(s.destinations.len(), before + 1);
+        assert!(s.destination_by(&id).writes_to(dir));
+        assert_eq!(s.destination_for_folder(dir), id, "the same folder picked again is the same entry");
+        assert_eq!(s.destinations.len(), before + 1);
     }
 
     #[test]
@@ -333,7 +362,7 @@ mod tests {
         assert_eq!(s.effects.len(), 1);
         assert_eq!(s.effects_id, s.effects[0].id);
         // Out-of-range numbers are clamped when the file is read.
-        fs::write(&p, r#"{ "effects": [ { "id": "x", "name": "X", "items": [ { "silence_end": { "seconds": 9999 } } ] } ], "effects_id": "x" }"#).unwrap();
+        fs::write(&p, r#"{ "effects": [ { "id": "x", "name": "X", "items": [ { "key": "silence-end", "values": { "seconds": 9999 } } ] } ], "effects_id": "x" }"#).unwrap();
         let s = load_from(&p);
         assert_eq!(s.effects[0].silence_end().unwrap().seconds, 60.0);
         let _ = fs::remove_file(p);

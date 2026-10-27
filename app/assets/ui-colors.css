@@ -57,6 +57,7 @@
 }
 
 :root[data-theme="dark"] {
+  color-scheme:      dark;              /* native widgets (a <select>'s popup, scrollbars, spinners) draw dark */
   --accent:          #7c6fff;           /* [GUI Standard: accent] */
   --accent-hov:      #6a5eef;           /* [GUI Standard: accentHov] */
   --bg:              #0e0f14;           /* @palette live=#0e0f14 debug=#00ff00 */

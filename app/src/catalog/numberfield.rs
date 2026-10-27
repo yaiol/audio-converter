@@ -1,4 +1,4 @@
-// twin: ui-ctl-numberfield.jsx jsx@af787f8f9cdc rsx@e06d18d3e2fa
+// twin: ui-ctl-numberfield.jsx jsx@31ac7b831757 rsx@cbb433364151
 //! NumberField — twin of `ui-ctl-numberfield.jsx`: a numeric input with themed ▲▼ steppers instead
 //! of the browser's own spinner. Same classes and element order (`.numfield`, `.numfield-input`,
 //! `.numfield-steppers`, `.numfield-step`), so `ui-app.css` skins it unchanged.
@@ -37,6 +37,8 @@ pub fn NumberField(
     #[props(default)] min: Option<f64>,
     #[props(default)] max: Option<f64>,
     #[props(default = 1.0)] step: f64,
+    /// How many places the field shows: a number is written with exactly that many (0.6 as 0.60) once it is not being typed.
+    #[props(default)] decimals: Option<usize>,
     /// A CSS length: `"56px"`, `"100%"`. Empty = the stylesheet's own width.
     #[props(default)] width: String,
     #[props(default = false)] disabled: bool,
@@ -48,11 +50,17 @@ pub fn NumberField(
     #[props(extends = GlobalAttributes, extends = input)]
     attributes: Vec<Attribute>,
 ) -> Element {
-    let show = |v: Option<f64>| v.map(|n| n.to_string()).unwrap_or_default();
+    let show = move |v: Option<f64>| v.map(|n| match decimals { Some(d) => format!("{n:.d$}"), None => n.to_string() }).unwrap_or_default();
     let mut draft = use_signal(|| show(value));
     // Mirror the controlled value into the draft; a keystroke that was in range already pushed the same value up,
     // so this only differs after a clamp or an outside change.
-    use_effect(use_reactive!(|value| draft.set(value.map(|n| n.to_string()).unwrap_or_default())));
+    // A keystroke already pushed its number up, so the draft is left as typed (not reformatted under the cursor) while it still reads as that number.
+    use_effect(use_reactive!(|value| {
+        let typed = draft.peek().trim().parse::<f64>().ok();
+        if typed.is_none() || typed != value {
+            draft.set(show(value));
+        }
+    }));
 
     // A number into [min, max]; NaN is blank when blank is allowed, else the minimum (or 0).
     let clamp = move |v: f64| -> Option<f64> {
@@ -66,7 +74,15 @@ pub fn NumberField(
         if disabled {
             return;
         }
-        on_change.call(clamp(value.unwrap_or(0.0) + dir * step));
+        // a step is added in binary floating point (0.7 + 0.05 is 0.7499999999999999): round to the decimals the step and the value carry
+        let places = |x: f64| {
+            let t = x.to_string();
+            if t.contains('e') { 0 } else { t.split_once('.').map_or(0, |(_, d)| d.len()) }
+        };
+        let from = value.unwrap_or(0.0);
+        let p = places(step).max(places(from)).min(12) as i32;
+        let scale = 10f64.powi(p);
+        on_change.call(clamp(((from + dir * step) * scale).round() / scale));
     };
 
     let class = if class.is_empty() { "numfield".to_string() } else { format!("numfield {class}") };

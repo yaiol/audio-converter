@@ -108,7 +108,7 @@ What sets it apart is that three choices are made separately, each from its own 
 
 ## Build from source
 
-Requires the Rust toolchain (stable) and, for the installer, the Dioxus CLI (`cargo install dioxus-cli`). The app drives **ffmpeg**, which is not committed: `scripts/fetch-ffmpeg.sh <windows|linux|macos>` puts an LGPL build in `app/resources/`, and during development the one on your `PATH` is used.
+Requires the Rust toolchain (stable) and, for the installer, the Dioxus CLI (`cargo install dioxus-cli`). The app drives **ffmpeg**, which is not part of the repository and is not bundled: the app downloads the build yaiol has approved into a folder of its own the first time it starts, and never uses an ffmpeg found elsewhere on the machine.
 
 ```bash
 cargo run -p audio-converter                                                    # run in development
@@ -125,7 +125,7 @@ A Cargo workspace of three crates: the **engine** (everything that is not the wi
 | Layer | Technology |
 |-------|-----------|
 | UI | Dioxus 0.7 on the system WebView |
-| Audio engine | ffmpeg, bundled as a separate LGPL executable |
+| Audio engine | ffmpeg, a separate executable the app downloads and installs itself |
 | Tag writing | lofty, plus a header rewriter for WMA |
 | Interface languages | flat JSON bundles embedded at build time |
 | Packaging | `dx bundle` (NSIS, deb, AppImage, dmg) |
@@ -150,7 +150,7 @@ Effects run in a fixed order as one ffmpeg audio-filter chain. At most two measu
 
 Released under the [MIT License](LICENSE).
 
-The installer bundles [ffmpeg](https://ffmpeg.org) as a separate executable, built under the LGPL; it is not part of this repository and keeps its own licence.
+The app downloads [ffmpeg](https://ffmpeg.org) as a separate executable from its builders; it is not part of this repository or of the installer and keeps its own licence.
 
 <div align="center">
   <sub>Audio Converter is part of <a href="https://apps.yaiol.com">yaiol Applications</a>.</sub>

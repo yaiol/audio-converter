@@ -71,7 +71,8 @@ struct State {
 }
 
 struct Inner {
-    ffmpeg: PathBuf,
+    /// Where ffmpeg is. It can appear while the app runs (the app installs it), so it is set, not fixed.
+    ffmpeg: Mutex<Option<PathBuf>>,
     state: Mutex<State>,
     /// The ReplayGain figures of an album, by folder and album name: computed by the first job that
     /// needs them, from every file of the run that belongs to it, and kept for the rest. Forgotten
@@ -86,13 +87,28 @@ pub struct Runner {
 
 impl Runner {
     pub fn new(ffmpeg: PathBuf) -> Runner {
+        let runner = Runner::without_ffmpeg();
+        runner.set_ffmpeg(Some(ffmpeg));
+        runner
+    }
+
+    /// A runner with no ffmpeg yet: a job started on it fails with "ffmpeg not found" until one is set.
+    pub fn without_ffmpeg() -> Runner {
         Runner {
             inner: Arc::new(Inner {
-                ffmpeg,
+                ffmpeg: Mutex::new(None),
                 state: Mutex::new(State { slots: Vec::new(), workers: 0, limit: 1 }),
                 albums: Mutex::new(HashMap::new()),
             }),
         }
+    }
+
+    pub fn set_ffmpeg(&self, path: Option<PathBuf>) {
+        *self.inner.ffmpeg.lock().unwrap() = path;
+    }
+
+    pub fn ffmpeg(&self) -> Option<PathBuf> {
+        self.inner.ffmpeg.lock().unwrap().clone()
     }
 
     /// Queue jobs and make sure up to `parallel` workers are running. A job whose id is already
@@ -207,7 +223,10 @@ fn worker(inner: Arc<Inner>) {
 }
 
 fn run_job(inner: &Inner, spec: &JobSpec, cancel: &AtomicBool, child_slot: &Mutex<Option<Child>>) -> JobStatus {
-    let probe = match ffmpeg::probe(&inner.ffmpeg, &spec.input) {
+    let Some(ffmpeg_path) = inner.ffmpeg.lock().unwrap().clone() else {
+        return JobStatus::Failed { reason: "ffmpeg not found".to_owned() };
+    };
+    let probe = match ffmpeg::probe(&ffmpeg_path, &spec.input) {
         Ok(p) => p,
         Err(reason) => return JobStatus::Failed { reason },
     };
@@ -252,6 +271,10 @@ fn run_job(inner: &Inner, spec: &JobSpec, cancel: &AtomicBool, child_slot: &Mute
     // conversion; what they find is turned into exact arguments (see `effects::plan`).
     let effects = spec.effects.clone().normalized();
     let mut plan = crate::effects::EffectsPlan::default();
+    // An effect that cannot be written (the catalogue is not installed, ffmpeg lacks the filter) fails the job with the reason.
+    if let Err(reason) = effects.check() {
+        return JobStatus::Failed { reason };
+    }
     if !effects.items.is_empty() {
         match analysis_plan(inner, spec, &effects, &probe, cancel, child_slot) {
             Ok(Some(p)) => plan = p,
@@ -274,7 +297,7 @@ fn run_job(inner: &Inner, spec: &JobSpec, cancel: &AtomicBool, child_slot: &Mute
     let args = ffmpeg::build_args(&spec.input, &output, &preset, &cleanup, &probe.tags, &ignored, with_cover, probe.source, &plan);
 
     set_status(inner, spec.id, JobStatus::Running { percent: 0.0 });
-    let mut child = match ffmpeg::command(&inner.ffmpeg)
+    let mut child = match ffmpeg::command(&ffmpeg_path)
         .args(&args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -333,7 +356,7 @@ fn run_job(inner: &Inner, spec: &JobSpec, cancel: &AtomicBool, child_slot: &Mute
         Some(Ok(s)) if s.success() => {
             // ffmpeg joins a repeated field into one value; the tag library writes them back as
             // separate values. A failure here keeps ffmpeg's tags: the file is still good.
-            let _ = crate::tags::restore_repeated_fields(&inner.ffmpeg, &spec.input, &output, &preset, &cleanup, &probe.tags, &ignored, probe.source, &plan.tags);
+            let _ = crate::tags::restore_repeated_fields(&ffmpeg_path, &spec.input, &output, &preset, &cleanup, &probe.tags, &ignored, probe.source, &plan.tags);
             JobStatus::Done { output }
         }
         _ => {
@@ -357,7 +380,8 @@ fn run_pass(
     cancel: &AtomicBool,
     child_slot: &Mutex<Option<Child>>,
 ) -> Result<Option<String>, String> {
-    let mut child = ffmpeg::command(&inner.ffmpeg)
+    let ffmpeg_path = inner.ffmpeg.lock().unwrap().clone().ok_or_else(|| "ffmpeg not found".to_owned())?;
+    let mut child = ffmpeg::command(&ffmpeg_path)
         .args(["-hide_banner", "-nostdin", "-nostats", "-loglevel", "info"])
         .args(args)
         .args(["-f", "null", "-progress", "pipe:1", "-"])
@@ -497,6 +521,7 @@ fn album_gain(
     cancel: &AtomicBool,
     child_slot: &Mutex<Option<Child>>,
 ) -> Result<Option<crate::effects::Album>, String> {
+    let ffmpeg_path = inner.ffmpeg.lock().unwrap().clone().ok_or_else(|| "ffmpeg not found".to_owned())?;
     let album = probe.tags.get("album").map(|a| a.trim().to_lowercase()).unwrap_or_default();
     if album.is_empty() {
         return Ok(None);
@@ -520,7 +545,7 @@ fn album_gain(
         let same = if p == spec.input {
             Some(probe.duration_us)
         } else {
-            ffmpeg::probe(&inner.ffmpeg, &p)
+            ffmpeg::probe(&ffmpeg_path, &p)
                 .ok()
                 .filter(|q| q.tags.get("album").map(|a| a.trim().to_lowercase()).as_deref() == Some(album.as_str()))
                 .map(|q| q.duration_us)
@@ -560,6 +585,8 @@ fn album_gain(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::effects::Item;
+    use serde_json::json;
     use crate::format::Format;
     use crate::preset::Id3Version;
     use crate::cleanup::CleanupMode;
@@ -572,7 +599,7 @@ mod tests {
     /// These run the REAL ffmpeg when there is one and are skipped quietly when there is not, so a
     /// machine without it still passes `cargo test`.
     fn ffmpeg() -> Option<PathBuf> {
-        let f = ffmpeg::locate();
+        let f = ffmpeg::ffmpeg_for_tests();
         if f.is_none() {
             eprintln!("ffmpeg not found - integration test skipped");
         }
@@ -2123,8 +2150,7 @@ mod tests {
     fn the_silence_at_the_end_is_exactly_the_wanted_length() {
         let Some(ff) = ffmpeg() else { return };
         let dir = scratch("silence-end");
-        let mut e = crate::effects::EffectsEntry::new("t");
-        e.add(crate::effects::Kind::SilenceEnd);
+        let e = entry_of(vec![Item::new("silence-end")]);
         // A long tail is cut down to 2 s, a short tail and none at all are brought up to it.
         for (name, tail) in [("long.wav", 3.5), ("short.wav", 0.3), ("none.wav", 0.0)] {
             let src = tone_with_tail(&ff, &dir, name, 3, tail);
@@ -2145,8 +2171,7 @@ mod tests {
         let dir = scratch("normalise");
         let src = tone(&ff, &dir, "quiet.wav", 4);
         let before = measure(&ff, &src).loudness_lufs.unwrap();
-        let mut e = crate::effects::EffectsEntry::new("t");
-        e.add(crate::effects::Kind::Volume);
+        let e = entry_of(vec![Item::new("volume-loudness")]);
         let out = dir.join("out");
         let file = run_one(ff.clone(), effects_job(&src, &out, Format::Flac, e, TagCleanup::default()));
         let after = measure(&ff, &file);
@@ -2161,8 +2186,7 @@ mod tests {
         let Some(ff) = ffmpeg() else { return };
         let dir = scratch("replaygain");
         let src = tone(&ff, &dir, "quiet.wav", 3);
-        let mut e = crate::effects::EffectsEntry::new("t");
-        e.add(crate::effects::Kind::ReplayGain);
+        let e = entry_of(vec![Item::new("replaygain-tags")]);
         // The strictest cleaning there is: delete everything.
         let mut cleanup = TagCleanup::new("none");
         cleanup.mode = CleanupMode::Delete;
@@ -2202,9 +2226,7 @@ mod tests {
             .status()
             .unwrap()
             .success());
-        let mut e = crate::effects::EffectsEntry::new("t");
-        e.add(crate::effects::Kind::SilenceEnd);
-        e.add(crate::effects::Kind::Volume);
+        let e = entry_of(vec![Item::new("silence-end"), Item::new("volume-loudness")]);
         let out = dir.join("out");
         let r = Runner::new(ff);
         r.start(vec![effects_job(&src, &out, Format::Flac, e, TagCleanup::default())], 1);
@@ -2289,7 +2311,7 @@ mod tests {
         assert_eq!(crate::format::Format::keeping("", "mp3"), None);
     }
 
-    fn entry_of(items: Vec<crate::effects::Effect>) -> crate::effects::EffectsEntry {
+    fn entry_of(items: Vec<Item>) -> crate::effects::EffectsEntry {
         crate::effects::EffectsEntry { items, ..crate::effects::EffectsEntry::new("t") }.normalized()
     }
 
@@ -2315,7 +2337,6 @@ mod tests {
 
     #[test]
     fn trimming_silence_takes_the_start_and_the_end_but_not_the_middle() {
-        use crate::effects::{Effect, TrimSilence};
         let Some(ff) = ffmpeg() else { return };
         let dir = scratch("trim");
         // 2 s of silence, 1.5 s of tone, 1 s of silence, 1.5 s of tone, 2 s of silence.
@@ -2332,7 +2353,7 @@ mod tests {
             .success());
         let before = length_of(&ff, &src);
         let out = dir.join("out");
-        let e = entry_of(vec![Effect::TrimSilence(TrimSilence::default())]);
+        let e = entry_of(vec![Item::new("trim-silence")]);
         let file = run_one(ff.clone(), effects_job(&src, &out, Format::Flac, e, TagCleanup::default()));
         let after = length_of(&ff, &file);
         // 4 s of sound with the silence between kept, plus two margins of 50 ms.
@@ -2342,15 +2363,14 @@ mod tests {
 
     #[test]
     fn a_range_and_a_limit_keep_exactly_what_they_say() {
-        use crate::effects::{CutRange, Effect, LimitDuration};
         let Some(ff) = ffmpeg() else { return };
         let dir = scratch("range");
         let src = tone(&ff, &dir, "ten.wav", 10);
         let out = dir.join("out");
-        let range = entry_of(vec![Effect::CutRange(CutRange { from_s: 2.0, to_s: 6.0 })]);
+        let range = entry_of(vec![Item::with("keep-range", &[("from", json!(2)), ("to", json!(6))])]);
         let a = run_one(ff.clone(), effects_job(&src, &out.join("a"), Format::Flac, range, TagCleanup::default()));
         assert!((length_of(&ff, &a) - 4.0).abs() < 0.1, "{}", length_of(&ff, &a));
-        let limit = entry_of(vec![Effect::LimitDuration(LimitDuration { seconds: 3.0 })]);
+        let limit = entry_of(vec![Item::with("limit-duration", &[("seconds", json!(3))])]);
         let b = run_one(ff.clone(), effects_job(&src, &out.join("b"), Format::Flac, limit, TagCleanup::default()));
         assert!((length_of(&ff, &b) - 3.0).abs() < 0.1, "{}", length_of(&ff, &b));
         let _ = std::fs::remove_dir_all(dir);
@@ -2358,12 +2378,11 @@ mod tests {
 
     #[test]
     fn the_fades_open_and_close_the_sound() {
-        use crate::effects::{Effect, Fade};
         let Some(ff) = ffmpeg() else { return };
         let dir = scratch("fades");
         let src = tone(&ff, &dir, "tone.wav", 5);
         let out = dir.join("out");
-        let e = entry_of(vec![Effect::FadeIn(Fade { ms: 1500 }), Effect::FadeOut(Fade { ms: 1500 })]);
+        let e = entry_of(vec![Item::with("fade-in", &[("length", json!(1500))]), Item::with("fade-out", &[("length", json!(1500))])]);
         let file = run_one(ff.clone(), effects_job(&src, &out, Format::Flac, e, TagCleanup::default()));
         let (start, middle, end) = (peak_of(&ff, &file, 0.0, 0.15), peak_of(&ff, &file, 2.0, 1.0), peak_of(&ff, &file, 4.85, 0.15));
         assert!(start < middle - 10.0, "start {start} dB, middle {middle} dB");
@@ -2374,25 +2393,24 @@ mod tests {
 
     #[test]
     fn the_volume_modes_reach_what_they_promise() {
-        use crate::effects::{Effect, Volume, VolumeMode};
         let Some(ff) = ffmpeg() else { return };
         let dir = scratch("volume");
         let src = tone(&ff, &dir, "tone.wav", 4);
         let before = peak_of(&ff, &src, 0.0, 4.0);
         let out = dir.join("out");
-        let run = |name: &str, v: Volume| {
-            let e = entry_of(vec![Effect::Volume(v)]);
+        let run = |name: &str, v: Item| {
+            let e = entry_of(vec![v]);
             run_one(ff.clone(), effects_job(&src, &out.join(name), Format::Flac, e, TagCleanup::default()))
         };
         // A fixed gain: +6 dB.
-        let g = run("gain", Volume { mode: VolumeMode::Gain, gain_db: 6.0, ..Volume::default() });
+        let g = run("gain", Item::with("volume-gain", &[("gain", json!(6))]));
         assert!((peak_of(&ff, &g, 0.0, 4.0) - before - 6.0).abs() < 0.3, "gain");
         // The peak lands on its target.
-        let p = run("peak", Volume { mode: VolumeMode::Peak, target_peak_db: -3.0, ..Volume::default() });
+        let p = run("peak", Item::with("volume-peak", &[("target", json!(-3))]));
         assert!((peak_of(&ff, &p, 0.0, 4.0) + 3.0).abs() < 0.3, "peak {}", peak_of(&ff, &p, 0.0, 4.0));
         // ReplayGain applied: the filter, run on the result, has nothing left to ask for. (Its estimate
         // is its own, not exactly -18 LUFS, so it is asked, not the meter.)
-        let r = run("rg", Volume { mode: VolumeMode::ReplayGain, ..Volume::default() });
+        let r = run("rg", Item::new("volume-replaygain"));
         let left = measure(&ff, &r).rg_gain_db.unwrap();
         assert!(left.abs() < 0.5, "{left} dB left to apply");
         let _ = std::fs::remove_dir_all(dir);
@@ -2400,7 +2418,6 @@ mod tests {
 
     #[test]
     fn an_album_shares_one_gain_and_each_track_keeps_its_own() {
-        use crate::effects::{Effect, ReplayGainTags};
         let Some(ff) = ffmpeg() else { return };
         let dir = scratch("album");
         let make = |name: &str, volume: &str, album: &str| {
@@ -2419,7 +2436,7 @@ mod tests {
         let quiet = make("quiet.flac", "volume=-6dB", "Alb");
         let loud = make("loud.flac", "volume=6dB", "Alb");
         let other = make("other.flac", "volume=0dB", "Another");
-        let e = entry_of(vec![Effect::ReplayGain(ReplayGainTags { album: true })]);
+        let e = entry_of(vec![Item::with("replaygain-tags", &[("album", json!(true))])]);
         let out = dir.join("out");
         let r = Runner::new(ff.clone());
         let jobs: Vec<JobSpec> = [&quiet, &loud, &other]
@@ -2477,13 +2494,12 @@ mod tests {
         crate::effects::parse_analysis(&text, 0.0).max_volume_db.unwrap_or(f64::NEG_INFINITY)
     }
 
-    fn convert_with(ff: &Path, src: &Path, out: &Path, items: Vec<crate::effects::Effect>) -> PathBuf {
+    fn convert_with(ff: &Path, src: &Path, out: &Path, items: Vec<Item>) -> PathBuf {
         run_one(ff.to_path_buf(), effects_job(src, out, Format::Flac, entry_of(items), TagCleanup::default()))
     }
 
     #[test]
     fn the_channels_effect_swaps_picks_and_mixes() {
-        use crate::effects::{Channels, ChannelsMode, Effect};
         let Some(ff) = ffmpeg() else { return };
         let dir = scratch("channels");
         // A tone on the LEFT only.
@@ -2498,13 +2514,13 @@ mod tests {
             .success());
         assert!(channel_peak(&ff, &src, 0) > -30.0 && channel_peak(&ff, &src, 1) < -60.0);
         let out = dir.join("out");
-        let swapped = convert_with(&ff, &src, &out.join("swap"), vec![Effect::Channels(Channels { mode: ChannelsMode::Swap })]);
+        let swapped = convert_with(&ff, &src, &out.join("swap"), vec![Item::with("channels", &[("mode", json!("swap"))])]);
         assert!(channel_peak(&ff, &swapped, 0) < -60.0 && channel_peak(&ff, &swapped, 1) > -30.0, "swap");
-        let right = convert_with(&ff, &src, &out.join("right"), vec![Effect::Channels(Channels { mode: ChannelsMode::Right })]);
+        let right = convert_with(&ff, &src, &out.join("right"), vec![Item::with("channels", &[("mode", json!("right"))])]);
         assert!(channel_peak(&ff, &right, 0) < -60.0 && channel_peak(&ff, &right, 1) < -60.0, "the right channel is silent, on both sides");
-        let left = convert_with(&ff, &src, &out.join("left"), vec![Effect::Channels(Channels { mode: ChannelsMode::Left })]);
+        let left = convert_with(&ff, &src, &out.join("left"), vec![Item::with("channels", &[("mode", json!("left"))])]);
         assert!(channel_peak(&ff, &left, 0) > -30.0 && channel_peak(&ff, &left, 1) > -30.0, "left on both sides");
-        let mono = convert_with(&ff, &src, &out.join("mono"), vec![Effect::Channels(Channels { mode: ChannelsMode::Mono })]);
+        let mono = convert_with(&ff, &src, &out.join("mono"), vec![Item::with("channels", &[("mode", json!("mono"))])]);
         let m = channel_peak(&ff, &mono, 0);
         assert!(m > -30.0 && m < channel_peak(&ff, &src, 0) - 3.0, "a mix of a tone and silence is half as loud: {m}");
         let _ = std::fs::remove_dir_all(dir);
@@ -2512,21 +2528,20 @@ mod tests {
 
     #[test]
     fn the_tempo_changes_the_length_and_the_silence_follows_it() {
-        use crate::effects::{Effect, SilenceEnd, Tempo};
         let Some(ff) = ffmpeg() else { return };
         let dir = scratch("tempo");
         let src = tone_at(&ff, &dir, "ten.wav", 440, 10);
         let out = dir.join("out");
-        let fast = convert_with(&ff, &src, &out.join("fast"), vec![Effect::Tempo(Tempo { percent: 100 })]);
+        let fast = convert_with(&ff, &src, &out.join("fast"), vec![Item::with("try:atempo", &[("tempo", json!(2))])]);
         assert!((length_of(&ff, &fast) - 5.0).abs() < 0.15, "{}", length_of(&ff, &fast));
-        let slow = convert_with(&ff, &src, &out.join("slow"), vec![Effect::Tempo(Tempo { percent: -50 })]);
+        let slow = convert_with(&ff, &src, &out.join("slow"), vec![Item::with("try:atempo", &[("tempo", json!(0.5))])]);
         assert!((length_of(&ff, &slow) - 20.0).abs() < 0.3, "{}", length_of(&ff, &slow));
         // With the silence at the end: 5 s of sound, then 2 s.
         let both = convert_with(
             &ff,
             &src,
             &out.join("both"),
-            vec![Effect::Tempo(Tempo { percent: 100 }), Effect::SilenceEnd(SilenceEnd::default())],
+            vec![Item::with("try:atempo", &[("tempo", json!(2))]), Item::new("silence-end")],
         );
         assert!((length_of(&ff, &both) - 7.0).abs() < 0.2, "{}", length_of(&ff, &both));
         let _ = std::fs::remove_dir_all(dir);
@@ -2534,33 +2549,28 @@ mod tests {
 
     #[test]
     fn the_filters_of_tone_shaping_do_what_their_names_say() {
-        use crate::effects::{Dynamics, DynamicsMode, Effect, Equalizer, LowCut, Tone};
         let Some(ff) = ffmpeg() else { return };
         let dir = scratch("shape");
         let low = tone_at(&ff, &dir, "p50.wav", 50, 3);
         let mid = tone_at(&ff, &dir, "p440.wav", 440, 3);
         let out = dir.join("out");
         // A low cut at 1 kHz takes a 50 Hz tone away.
-        let cut = convert_with(&ff, &low, &out.join("cut"), vec![Effect::LowCut(LowCut { hz: 1000 })]);
+        let cut = convert_with(&ff, &low, &out.join("cut"), vec![Item::with("try:highpass", &[("frequency", json!(1000))])]);
         assert!(peak_of(&ff, &cut, 1.0, 1.0) < peak_of(&ff, &low, 1.0, 1.0) - 20.0, "low cut");
         // +12 dB of bass lifts a 50 Hz tone.
-        let bass = convert_with(&ff, &low, &out.join("bass"), vec![Effect::Tone(Tone { bass_db: 12, treble_db: 0 })]);
+        let bass = convert_with(&ff, &low, &out.join("bass"), vec![Item::with("try:bass", &[("gain", json!(12))])]);
         assert!(peak_of(&ff, &bass, 1.0, 1.0) > peak_of(&ff, &low, 1.0, 1.0) + 6.0, "bass");
         // The 500 Hz band lifts a 440 Hz tone; the 8 kHz band does not.
-        let mut up = [0; 10];
-        up[4] = 12;
-        let eq = convert_with(&ff, &mid, &out.join("eq"), vec![Effect::Equalizer(Equalizer { gains_db: up })]);
+        let eq = convert_with(&ff, &mid, &out.join("eq"), vec![Item::with("equalizer", &[("g500", json!(12))])]);
         assert!(peak_of(&ff, &eq, 1.0, 1.0) > peak_of(&ff, &mid, 1.0, 1.0) + 6.0, "equaliser");
-        let mut far = [0; 10];
-        far[8] = 12;
-        let eq2 = convert_with(&ff, &mid, &out.join("eq2"), vec![Effect::Equalizer(Equalizer { gains_db: far })]);
+        let eq2 = convert_with(&ff, &mid, &out.join("eq2"), vec![Item::with("equalizer", &[("g8k", json!(12))])]);
         assert!((peak_of(&ff, &eq2, 1.0, 1.0) - peak_of(&ff, &mid, 1.0, 1.0)).abs() < 1.0, "a far band leaves the tone");
         // A compressor with a low threshold lowers the tone.
         let comp = convert_with(
             &ff,
             &mid,
             &out.join("comp"),
-            vec![Effect::Dynamics(Dynamics { mode: DynamicsMode::Compressor, threshold_db: -40.0, ratio: 10 })],
+            vec![Item::with("compressor", &[("threshold", json!(-40)), ("ratio", json!(10))])],
         );
         assert!(peak_of(&ff, &comp, 1.0, 1.0) < peak_of(&ff, &mid, 1.0, 1.0) - 4.0, "compressor");
         let _ = std::fs::remove_dir_all(dir);
@@ -2568,16 +2578,15 @@ mod tests {
 
     #[test]
     fn the_restoring_effects_run_and_keep_the_length() {
-        use crate::effects::{DeEsser, Denoise, Dynamics, DynamicsMode, Effect, Repair};
         let Some(ff) = ffmpeg() else { return };
         let dir = scratch("restore");
         let src = tone_at(&ff, &dir, "tone.wav", 440, 3);
         let out = dir.join("out");
-        let cases: Vec<(&str, Vec<Effect>)> = vec![
-            ("repair", vec![Effect::Repair(Repair::default())]),
-            ("denoise", vec![Effect::Denoise(Denoise::default())]),
-            ("deesser", vec![Effect::DeEsser(DeEsser::default())]),
-            ("normaliser", vec![Effect::Dynamics(Dynamics { mode: DynamicsMode::Normaliser, ..Dynamics::default() })]),
+        let cases: Vec<(&str, Vec<Item>)> = vec![
+            ("repair", vec![Item::new("try:adeclick"), Item::new("try:adeclip")]),
+            ("denoise", vec![Item::new("try:afftdn")]),
+            ("deesser", vec![Item::new("try:deesser")]),
+            ("normaliser", vec![Item::new("try:dynaudnorm")]),
         ];
         for (name, items) in cases {
             let file = convert_with(&ff, &src, &out.join(name), items);
@@ -2588,7 +2597,6 @@ mod tests {
 
     #[test]
     fn the_volume_is_set_from_what_the_processing_leaves() {
-        use crate::effects::{Effect, LowCut, Volume};
         let Some(ff) = ffmpeg() else { return };
         let dir = scratch("measured-after");
         // A loud 50 Hz hum and a quiet 2 kHz tone. The low cut takes the hum away, so what is left is
@@ -2605,7 +2613,7 @@ mod tests {
             .unwrap()
             .success());
         let out = dir.join("out");
-        let file = convert_with(&ff, &src, &out, vec![Effect::LowCut(LowCut { hz: 1000 }), Effect::Volume(Volume::default())]);
+        let file = convert_with(&ff, &src, &out, vec![Item::with("try:highpass", &[("frequency", json!(1000))]), Item::new("volume-loudness")]);
         let after = measure(&ff, &file).loudness_lufs.unwrap();
         assert!((after + 16.0).abs() < 1.0, "{after} LUFS");
         let _ = std::fs::remove_dir_all(dir);

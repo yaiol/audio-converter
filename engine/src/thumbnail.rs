@@ -102,7 +102,7 @@ mod tests {
     use std::time::Instant;
 
     fn ffmpeg_path() -> Option<std::path::PathBuf> {
-        ffmpeg::locate()
+        ffmpeg::ffmpeg_for_tests()
     }
 
     #[test]

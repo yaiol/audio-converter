@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Build the command line (yac) in release and put it where `dx bundle` picks it up as a bundle
-# resource: app/resources/yac(.exe), beside ffmpeg.
+# resource: app/resources/yac(.exe).
 #
 #   scripts/build-cli.sh
 #

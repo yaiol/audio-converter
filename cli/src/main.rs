@@ -251,8 +251,8 @@ fn main() -> ExitCode {
         return fail(i18n::t(&lang, "msgCliNoAudio"));
     }
 
-    let Some(ffmpeg) = engine::ffmpeg::locate() else {
-        return fail(i18n::t(&lang, "msgMainNoFfmpeg"));
+    let Some(ffmpeg) = engine::ffmpeg::locate(engine::settings::ffmpeg_dir().as_deref()) else {
+        return fail(i18n::t(&lang, "msgCliNoFfmpeg"));
     };
     let runner = Runner::new(ffmpeg);
     runner.start(specs, parallel);

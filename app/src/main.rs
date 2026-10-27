@@ -5,6 +5,9 @@
 
 mod catalog;
 mod converter;
+mod effects_editor;
+mod effects_form;
+mod ffmpeg_panel;
 mod i18n;
 mod icons;
 mod manager;
@@ -18,15 +21,18 @@ use converter::Converter;
 use dioxus::prelude::*;
 use dioxus_free_icons::{
     Icon,
-    icons::ld_icons::{LdAudioWaveform, LdBell, LdCircleHelp, LdEraser, LdListMusic, LdSettings, LdSlidersHorizontal},
+    icons::ld_icons::{LdSparkles, LdBell, LdCircleHelp, LdEraser, LdFolder, LdSettings, LdSlidersHorizontal},
 };
-use manager::{CleanupEditor, DestinationEditor, EffectsEditor, NotifyEditor, PresetEditor};
+use ffmpeg_panel::FfmpegSetting;
+use effects_editor::EffectsEditor;
+use manager::{CleanupEditor, DestinationEditor, NotifyEditor, PresetEditor};
 
-const CSS: [&str; 4] = [
+const CSS: [&str; 5] = [
     include_str!("../assets/ui-colors.css"),
     include_str!("../assets/ui-app.css"),
     include_str!("../assets/ui-listview.css"),
     include_str!("../assets/app.css"),
+    include_str!("../assets/effects_form.css"),
 ];
 
 // ─── App identity - single source of truth: Cargo.toml (see build.rs) ───────────────────────────
@@ -131,6 +137,7 @@ fn App() -> Element {
         let s = settings.read();
         (s.lang.clone(), s.theme.clone())
     };
+    engine::effects::set_language(&lang);
     let t = |key: &str| i18n::t(&lang, key);
     let tip_help = t("tipHdrHelp");
     let tip_settings = t("tipHdrSettings");
@@ -212,6 +219,7 @@ fn App() -> Element {
                                     news_on.set(on);
                                 },
                             }
+                            FfmpegSetting { lang: lang.clone() }
                         }),
                         app_tabs: vec![
                             AppTab {
@@ -227,12 +235,12 @@ fn App() -> Element {
                             AppTab {
                                 key: manager::EFFECTS.to_owned(),
                                 label: tab_effects.clone(),
-                                icon: rsx! { Icon { width: 14, height: 14, icon: LdAudioWaveform } },
+                                icon: rsx! { Icon { width: 14, height: 14, icon: LdSparkles } },
                             },
                             AppTab {
                                 key: manager::DESTINATIONS.to_owned(),
                                 label: tab_destinations.clone(),
-                                icon: rsx! { Icon { width: 14, height: 14, icon: LdListMusic } },
+                                icon: rsx! { Icon { width: 14, height: 14, icon: LdFolder } },
                             },
                             AppTab {
                                 key: manager::NOTIFICATIONS.to_owned(),

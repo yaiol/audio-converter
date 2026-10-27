@@ -1,0 +1,15 @@
+/* The few classes of EffectForm (effects_form.rs) that the app's catalog CSS does not have. Everything else is the catalog's own (dlg-field, input, select, btn, hint). */
+.effect-form{display:flex;flex-direction:column;gap:14px}
+pre.cmd{margin:0;padding:7px 9px;min-width:0;background:var(--bg-row);border-radius:8px;color:var(--text-dim);font:11.5px/1.5 "JetBrains Mono",ui-monospace,Consolas,monospace;white-space:pre-wrap;word-break:break-all}
+.effect-ctl{display:flex;flex-wrap:wrap;gap:6px;align-items:center;min-width:0}
+.effect-ctl>.input,.effect-ctl>.select{flex:1;min-width:0}
+.effect-ctl .sz{flex:0 0 74px}
+.effect-ctl .szp{flex:0 1 auto;max-width:140px}
+.effect-ctl input[type=range]{flex:1;min-width:50px;accent-color:var(--accent)}
+.effect-ctl .unit{color:var(--text-mute);font-size:12px;white-space:nowrap}
+.effect-ctl .unit.bad{color:var(--danger)}
+.effect-form .flags{display:flex;flex-wrap:wrap;gap:4px 12px}
+.effect-form .flags label{font-size:12.5px;display:flex;gap:4px;align-items:center}
+
+/* the reset button ends the control's row */
+.effect-ctl .fx-reset { flex: none; margin-left: auto; }

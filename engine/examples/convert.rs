@@ -17,7 +17,7 @@ fn main() {
     let format = Format::from_id(&a[0]).unwrap_or_else(|| panic!("unknown format {}", a[0]));
     let id3 = if a[1] == "24" { Id3Version::V24 } else { Id3Version::V23 };
     let out = PathBuf::from(&a[2]);
-    let ffmpeg = audio_converter_engine::ffmpeg::locate().expect("no ffmpeg found");
+    let ffmpeg = audio_converter_engine::ffmpeg::locate(audio_converter_engine::settings::ffmpeg_dir().as_deref()).expect("no ffmpeg installed: start the app once");
     let runner = Runner::new(ffmpeg);
     let dest = Destination { folder: out.to_string_lossy().into_owned(), ..Destination::new("cli", "") };
     let specs: Vec<JobSpec> = a[3..]

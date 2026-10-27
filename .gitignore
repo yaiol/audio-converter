@@ -1,5 +1,5 @@
 target/
 release/
 .claude/
-# the bundled conversion engine is fetched at build time, never committed
+# the command line is copied here at build time, never committed
 app/resources/

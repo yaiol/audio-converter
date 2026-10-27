@@ -1,14 +1,12 @@
 //! Everything that touches the ffmpeg executable: finding it, asking it about a file, building the
-//! command line, and reading its progress. ffmpeg is a separate program next to the app - never
-//! linked - which is what keeps an LGPL build replaceable by the user.
+//! command line, and reading its progress. ffmpeg is a separate program - never linked, never shipped with the
+//! app, never the machine's own: the build yaiol approved, downloaded into the folder every yaiol app shares.
 //!
-//! ⚠ Nothing here may assume which build it is. The release builds are LGPL; a developer machine
-//! often has a GPL one. Both take the same arguments.
+//! ⚠ Nothing here may assume which build it is: the arguments are the same for a GPL and an LGPL one.
 
 use crate::{cleanup::{CleanupMode, TagCleanup}, destination::Destination, format::Format, preset::Preset};
 use std::{
     collections::HashMap,
-    ffi::OsStr,
     path::{Path, PathBuf},
     process::{Command, Stdio},
 };
@@ -17,34 +15,30 @@ pub fn executable_name() -> &'static str {
     if cfg!(windows) { "ffmpeg.exe" } else { "ffmpeg" }
 }
 
-/// First `name` found in a PATH-style variable.
-pub fn find_in_path(path_var: &OsStr, name: &str) -> Option<PathBuf> {
-    std::env::split_paths(path_var).map(|d| d.join(name)).find(|p| p.is_file())
+/// The ffmpeg to use: the one the app installed into `dir`, and no other. PATH is never searched, nothing is
+/// shipped beside the app, and a program in `dir` that no install recorded (one put there by hand) is not a build
+/// we know.
+pub fn locate(dir: Option<&Path>) -> Option<PathBuf> {
+    let dir = dir?;
+    crate::download::installed_version(dir)?;
+    Some(dir.join(executable_name()))
 }
 
-/// Where the app's own copy sits relative to its executable, per packaging:
-///   - Windows installer: next to the exe;
-///   - macOS bundle: `Contents/MacOS/..` -> `Contents/Resources`;
-///   - Linux .deb / AppImage: the exe is in `usr/bin`, bundle resources in `usr/lib/<name>/`.
-pub fn find_beside(exe: &Path) -> Option<PathBuf> {
-    let dir = exe.parent()?;
+/// Whether this ffmpeg was built with non-free parts (`--enable-nonfree`); `None` when it does not run.
+pub fn is_nonfree(ffmpeg: &Path) -> Option<bool> {
+    let out = command(ffmpeg).arg("-version").stdin(Stdio::null()).output().ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    Some(String::from_utf8_lossy(&out.stdout).contains("--enable-nonfree"))
+}
+
+/// The ffmpeg the tests that run a real one use: whatever is on PATH, or nothing (the test then skips). The app
+/// itself never looks on PATH; a test machine's own ffmpeg is a convenience for the tests only.
+#[cfg(test)]
+pub(crate) fn ffmpeg_for_tests() -> Option<PathBuf> {
     let name = executable_name();
-    let fixed = [dir.join(name), dir.join("resources").join(name), dir.join("../Resources").join(name)];
-    if let Some(p) = fixed.into_iter().find(|p| p.is_file()) {
-        return Some(p);
-    }
-    let lib = dir.join("../lib");
-    std::fs::read_dir(lib).ok()?.filter_map(Result::ok).map(|e| e.path().join(name)).find(|p| p.is_file())
-}
-
-/// The ffmpeg to use: the bundled one first, then whatever is on PATH.
-pub fn locate() -> Option<PathBuf> {
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(p) = find_beside(&exe) {
-            return Some(p);
-        }
-    }
-    std::env::var_os("PATH").and_then(|p| find_in_path(&p, executable_name()))
+    std::env::split_paths(&std::env::var_os("PATH")?).map(|d| d.join(name)).find(|p| p.is_file())
 }
 
 /// A `Command` that does not flash a console window on Windows.
@@ -758,7 +752,7 @@ At least one output file must be specified";
 
     #[test]
     fn cover_thumbnails_from_a_real_file() {
-        let Some(ff) = locate() else { return };
+        let Some(ff) = ffmpeg_for_tests() else { return };
         let dir = std::env::temp_dir().join(format!("yaiol-cover-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
@@ -929,18 +923,5 @@ At least one output file must be specified";
             let a = build_args(Path::new("i"), Path::new("o"), &Preset::new("t", f), &TagCleanup::keep(), &HashMap::new(), &[], true, SourceKind::default(), &crate::effects::EffectsPlan::default()).join(" ");
             assert!(!a.contains("v:0") && a.matches("-i ").count() == 1, "{f:?}");
         }
-    }
-
-    #[test]
-    fn find_in_path_picks_the_first_directory_that_has_it() {
-        let base = std::env::temp_dir().join(format!("yaiol-path-{}", std::process::id()));
-        let (a, b) = (base.join("a"), base.join("b"));
-        std::fs::create_dir_all(&a).unwrap();
-        std::fs::create_dir_all(&b).unwrap();
-        std::fs::write(b.join("tool"), b"x").unwrap();
-        let var = std::env::join_paths([&a, &b]).unwrap();
-        assert_eq!(find_in_path(&var, "tool"), Some(b.join("tool")));
-        assert_eq!(find_in_path(&var, "absent"), None);
-        let _ = std::fs::remove_dir_all(base);
     }
 }
